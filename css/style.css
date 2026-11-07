@@ -8,7 +8,7 @@
   --accent: #d92b3a;
   --depart: #d92b3a;
   --depart-bg: #fde8ea;
-  --away: #4b4fc4;
+  --away: var(--depart);
   --away-bg: #e8e9fb;
   --duty-bg: #ffffff;
   --return: #0f8a7a;
@@ -38,7 +38,7 @@
     --off-bg: #17301c;
     --prev-bg: #23292f;
     --depart: #ff6b77;
-    --away: #9ea1ff;
+    --away: var(--depart);
     --return: #4fd1bd;
     --standby: #ffb547;
     --off: #78c987;

@@ -14,7 +14,7 @@ const store = {
 };
 let rosters = store.get('rosters', {});
 let settings = { leaveHours: 3, ...store.get('settings', {}) };
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
