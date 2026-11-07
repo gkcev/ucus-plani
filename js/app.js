@@ -267,7 +267,7 @@ function renderHero() {
       <h2>${esc(loc)}</h2>
       <p class="when">${esc(current.title)} · ${esc(current.legs.map((l) => l.flight).join(', '))}</p>
       <div class="hero-grid">
-        <div class="hero-cell hl"><small>Eve dönüş (iniş)</small><b>${current.returnStamp.slice(11)}</b></div>
+        <div class="hero-cell hl"><small>Türkiye'ye iniş</small><b>${current.returnStamp.slice(11)}</b></div>
         <div class="hero-cell"><small>Dönüş günü</small><b style="font-size:16px">${esc(fmtShort(current.returnStamp.slice(0, 10)))}</b></div>
         <div class="hero-cell"><small>Dönüş uçuşu</small><b style="font-size:15px">${esc(current.last.flight)}</b></div>
       </div>
@@ -310,11 +310,19 @@ function renderMonth(r) {
   for (let k = 0; k < firstDow; k++) html.push('<div class="cell blank"></div>');
   for (const d of days) {
     const label = d.kind === 'depart' ? `✈ ${d.label}` : d.kind === 'return' ? '↩ Dönüş' : d.label;
-    html.push(`<button class="cell k-${d.kind}${d.date === today ? ' today' : ''}" data-date="${d.date}" aria-label="${esc(fmtDay(d.date))}: ${esc(label)}">
+    html.push(`<button class="cell k-${d.kind}${d.date === today ? ' today' : ''}" data-date="${d.date}"${homeStyle(d)} aria-label="${esc(fmtDay(d.date))}: ${esc(label)}${d.sub ? ', ' + esc(d.sub) : ''}">
       <span class="n">${d.day}</span><span class="lbl">${esc(label)}</span>${d.sub ? `<span class="sub">${esc(d.sub)}</span>` : ''}</button>`);
   }
   cal.innerHTML = html.join('');
   cal._days = days;
+}
+
+// Departure / return days: the part of the day spent at home is painted green (left = 00:00, right = 24:00)
+function homeStyle(d) {
+  if (!d.home) return '';
+  const u = Math.round(d.home.until * 100), f = Math.round(d.home.from * 100);
+  const duty = d.kind === 'return' ? 'var(--return-bg)' : 'var(--depart-bg)';
+  return ` style="background:linear-gradient(90deg, var(--home-bg) 0 ${u}%, ${duty} ${u}% ${f}%, var(--home-bg) ${f}% 100%)"`;
 }
 
 function renderTrips(r) {
@@ -379,7 +387,16 @@ function tripHtml(t) {
 function openTrip(t) { openSheet(tripHtml(t)); }
 
 function openDay(d) {
-  if (d.trip) return openSheet(`<p class="muted" style="margin-top:0">${esc(fmtDay(d.date))}</p>` + tripHtml(d.trip));
+  if (d.trip) {
+    const t = d.trip;
+    const landing = t.returnStamp && d.kind !== 'depart' ? `
+      <div class="hero" style="margin-bottom:14px">
+        <p class="eyebrow">Türkiye'ye iniş</p>
+        <h2 style="font-size:38px;line-height:1.1">${t.returnStamp.slice(11)}</h2>
+        <p class="when" style="margin:0">${esc(fmtDay(t.returnStamp.slice(0, 10)))} · ${esc(t.last.flight)} · İstanbul</p>
+      </div>` : '';
+    return openSheet(`<p class="muted" style="margin-top:0">${esc(fmtDay(d.date))}</p>` + landing + tripHtml(t));
+  }
   let title = 'Evde 🏠', body = 'Bu gün için bir görev yok.';
   if (d.kind === 'off') { title = 'İzinli 🏠'; body = CODE_INFO[d.duty?.type]?.long || 'Boş gün'; }
   if (d.kind === 'rest') { title = 'Dinlenme 🏠'; body = `Uçuş sonrası yasal dinlenme. Bitiş: ${fmtShort(d.restOf.restUntil.slice(0, 10))} ${d.restOf.restUntil.slice(11)}`; }

@@ -43,6 +43,9 @@ export function trips(roster, settings) {
   });
 }
 
+const WEEKDAY = new Intl.DateTimeFormat('tr-TR', { weekday: 'short', timeZone: 'UTC' });
+const dayFrac = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return (h * 60 + m) / 1440; };
+
 /** One entry per calendar day of the roster month. */
 export function buildDays(roster, settings) {
   const { year, month, days } = roster.period;
@@ -58,10 +61,16 @@ export function buildDays(roster, settings) {
       info.trip = trip;
       const departing = trip.first.depDate === date;
       const returning = trip.last.arrDate === date;
+      // part of the day spent at home (fractions of 24h): before leaving / after landing
+      const leaveDate = (trip.leave || trip.depStamp).slice(0, 10);
+      const homeUntil = departing ? (leaveDate === date ? dayFrac((trip.leave || trip.depStamp).slice(11)) : 0) : 0;
+      const homeFrom = returning && trip.returnStamp ? dayFrac(trip.returnStamp.slice(11)) : 1;
+      if (departing || returning) info.home = { until: homeUntil, from: homeFrom };
       if (departing) {
         info.kind = 'depart';
         info.label = trip.main;
         info.sub = trip.leave ? `Çıkış ${trip.leave.slice(11)}` : `Kalkış ${trip.first.dep}`;
+        if (returning) info.sub += ` · İniş ${trip.last.arr}`;
       } else if (returning) {
         info.kind = 'return';
         info.label = 'Dönüş';
@@ -73,7 +82,8 @@ export function buildDays(roster, settings) {
         const loc = arrived?.to || trip.main;
         const flying = trip.legs.some((l) => l.depDate === date);
         info.label = loc;
-        info.sub = flying ? 'Uçuş var' : 'Yurt dışında';
+        // what the family wants to see at a glance: when does he land in Türkiye?
+        info.sub = trip.returnStamp ? `↩ ${WEEKDAY.format(new Date(trip.returnStamp.slice(0, 10) + 'T12:00:00Z'))} ${trip.returnStamp.slice(11)}` : (flying ? 'Uçuş var' : '');
       }
     } else if (other) {
       const ci = CODE_INFO[other.type] || { label: other.type, long: other.type, kind: 'standby' };
@@ -94,6 +104,7 @@ export function buildDays(roster, settings) {
     if (nightLeave) {
       info.nightLeave = nightLeave;
       info.sub = `Gece ${nightLeave.leave.slice(11)} çıkış`;
+      info.home = { until: dayFrac(nightLeave.leave.slice(11)), from: 1 };
       if (!info.trip) info.trip = nightLeave;
     }
     out.push(info);

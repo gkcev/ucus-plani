@@ -16,6 +16,7 @@
   --standby-bg: #fff1d9;
   --off: #3f8f4f;
   --off-bg: #e6f4e8;
+  --home-bg: #d3eed8;
   --prev: #6b7280;
   --prev-bg: #eceef1;
   --radius: 16px;
@@ -34,6 +35,7 @@
     --return-bg: #12332f;
     --standby-bg: #3a2a10;
     --off-bg: #17301c;
+    --home-bg: #1d3d24;
     --prev-bg: #23292f;
     --depart: #ff6b77;
     --away: #9ea1ff;
