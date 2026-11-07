@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 17;
+const APP_VERSION = 18;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -279,9 +279,27 @@ function countCall(n = 1) {
   settings.apiCalls = { [m]: (settings.apiCalls?.[m] || 0) + n };
   store.set('settings', settings);
 }
+// state of the "Trafiği şimdi hesapla" button: idle | busy | done | error (shown on the button itself)
+let trafficBtn = { state: 'idle' };
+function setTrafficBtn(state, msg) {
+  trafficBtn = { state, msg };
+  clearTimeout(setTrafficBtn._t);
+  if (state === 'done' || state === 'error') setTrafficBtn._t = setTimeout(() => { trafficBtn = { state: 'idle' }; renderHero(); }, 4000);
+  renderHero();
+}
+function trafficBtnHtml() {
+  const s = trafficBtn.state;
+  const label = s === 'busy' ? '⏳ Hesaplanıyor…'
+    : s === 'done' ? '✓ Güncellendi'
+    : s === 'error' ? `⚠️ ${esc(trafficBtn.msg || 'Güncellenemedi')}`
+    : '🔄 Trafiği şimdi hesapla';
+  return `<button class="maps-btn on-dark traffic-btn is-${s}" data-traffic ${s === 'busy' ? 'disabled' : ''} aria-live="polite">${label}</button>`;
+}
+
 async function refreshTraffic(t, { quiet = false } = {}) {
   if (!trafficReady() || trafficBusy || !t?.key) return;
   trafficBusy = true;
+  if (!quiet) setTrafficBtn('busy');
   try {
     const arriveBy = shiftStamp(t.reportStamp, -SIGNIN_BUFFER_MIN); // be at the airport 40 min before sign-in
     const r = await driveTime({ key: settings.googleKey, home: settings.home, arriveBy, guessMin: t.drive || 60 });
@@ -289,9 +307,9 @@ async function refreshTraffic(t, { quiet = false } = {}) {
     const nowR = r.mode === 'now' ? r : await driveTime({ key: settings.googleKey, home: settings.home, arriveBy: null });
     countCall(r.calls + (nowR === r ? 0 : nowR.calls));
     setDrive(t.key, r.minutes, { src: 'traffic', delayMin: r.delayMin, km: r.km, mode: r.mode, nowMin: nowR.minutes, nowDelay: nowR.delayMin }, true);
-    if (!quiet) toast(`Trafik güncellendi: yol ${r.minutes} dk`);
+    if (!quiet) setTrafficBtn('done');
   } catch (err) {
-    if (!quiet) toast(err.message);
+    if (!quiet) setTrafficBtn('error', err.message);
     else console.warn(err);
   } finally {
     trafficBusy = false;
@@ -383,7 +401,7 @@ function renderHero() {
         if (next.drive) return `<p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk − ${DRIVE_BUFFER_MIN} dk pay (elle girildi)</p>`;
         return `<p class="drive-note">Şu an sabit kural: kalkıştan ${minLabel(next.leaveBefore)} önce. ${trafficReady() ? 'Trafik uçuştan 48 saat önce otomatik hesaplanır.' : 'Yol süresini yazarsan ya da ⚙️ Ayarlar\'dan trafik servisini açarsan imza − 40 dk − yol süresi olarak hesaplanır.'}</p>`;
       })()}
-      ${trafficReady() ? `<button class="maps-btn on-dark" data-traffic>🔄 Trafiği şimdi hesapla</button>` : ''}` : ''}`;
+      ${trafficReady() ? trafficBtnHtml() : ''}` : ''}`;
   el.onclick = (e) => {
     if (e.target.closest('[data-traffic]')) return refreshTraffic(next);
     if (!e.target.closest('[data-maps], .drive')) openTrip(next);
