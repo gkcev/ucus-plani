@@ -14,6 +14,7 @@ const store = {
 };
 let rosters = store.get('rosters', {});
 let settings = { leaveHours: 3, ...store.get('settings', {}) };
+const APP_VERSION = 7;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -447,6 +448,7 @@ function openSettings() {
       <button class="btn block" id="icsBtn">Telefon takvimine ekle (.ics)</button>` : ''}
     </div>
     ${ks.length ? `<div class="card"><h3>Yüklü aylar</h3>${ks.map((k) => `<div class="month-row"><span>${esc(monthName(k))}</span><button class="link-btn" data-del="${k}">Sil</button></div>`).join('')}</div>` : ''}
+    <p class="footnote">Sürüm ${APP_VERSION}</p>
     <p class="footnote">🔒 PDF cihazında okunur, hiçbir sunucuya gönderilmez. Paylaşım linki programı linkin içinde taşır, linki kime gönderirsen o görür.</p>`);
 }
 $('#menuBtn').onclick = openSettings;
@@ -509,6 +511,16 @@ async function boot() {
   }
   // refresh countdowns every minute
   setInterval(() => { if (keys().length) renderHero(); }, 60000);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    // when a new version takes over, reload once so the new look shows right away
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !reloaded) { reloaded = true; location.reload(); }
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    }).catch(() => {});
+  }
 }
 boot();

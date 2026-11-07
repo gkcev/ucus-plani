@@ -18,7 +18,7 @@ export const CODE_INFO = {
   IBI: { label: 'İzin', long: 'Boş gün (talep edilmiş)', kind: 'off' },
   HSBY: { label: 'Nöbet', long: 'Ev nöbeti: evde ama çağrılabilir', kind: 'standby' },
   SBY: { label: 'Nöbet', long: 'Nöbet', kind: 'standby' },
-  CFR: { label: 'Hazır', long: 'Call for Roster: görev çıkabilir', kind: 'standby' },
+  CFR: { label: 'CFR', long: 'Call for Roster: görev çıkabilir', kind: 'standby' },
   GG: { label: 'Görev', long: 'Önceki aydan devam eden görev', kind: 'prev' },
 };
 
