@@ -321,7 +321,7 @@ function renderMonth(r) {
 function homeStyle(d) {
   if (!d.home) return '';
   const u = Math.round(d.home.until * 100), f = Math.round(d.home.from * 100);
-  const duty = d.kind === 'return' ? 'var(--away-bg)' : 'var(--depart-bg)';
+  const duty = 'var(--duty-bg)';
   return ` style="background:linear-gradient(90deg, var(--off-bg) 0 ${u}%, ${duty} ${u}% ${f}%, var(--off-bg) ${f}% 100%)"`;
 }
 
@@ -334,6 +334,7 @@ function renderTrips(r) {
       <p class="dates">${esc(fmtShort(t.first.depDate))} → ${esc(fmtShort(t.last.arrDate))} · ${esc(t.legs.map((l) => l.flight).join(', '))}</p>
       <div class="row">
         ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b></span>` : ''}
+        ${t.first.from === HOME ? `<span>İmza <b>${t.reportStamp.slice(11)}</b></span>` : ''}
         <span>Kalkış <b>${t.first.dep}</b></span>
         ${t.returnStamp ? `<span>Eve iniş <b>${t.returnStamp.slice(11)}</b> (${esc(fmtShort(t.returnStamp.slice(0, 10)))})</span>` : ''}
       </div>
@@ -364,7 +365,7 @@ function tripHtml(t) {
     </div>`).join('');
   const steps = [];
   if (t.leave) steps.push({ t: t.leave.slice(11), d: 'Evden çıkış', s: `Kalkıştan ${hoursLabel(settings.leaveHours)} önce`, hl: true });
-  if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), d: 'Mesai başlangıcı', s: 'Havalimanında brifing' });
+  if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
   steps.push({ t: t.first.dep, d: `Kalkış: ${city(t.first.from)} → ${city(t.first.to)}`, s: t.first.flight });
   if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}`, s: t.last.flight });
   const hotels = t.layovers.map((y) => `
