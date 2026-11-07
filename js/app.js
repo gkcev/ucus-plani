@@ -3,7 +3,7 @@ import { city } from './stations.js';
 import { driveTime, currentPosition } from './traffic.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, CODE_INFO, HOME,
-  monthStats, fmtDur, fmtHM, shiftStamp, SIGNIN_BUFFER_MIN,
+  monthStats, fmtDur, fmtHM, shiftStamp, SIGNIN_BUFFER_MIN, DRIVE_BUFFER_MIN,
 } from './model.js';
 
 // ---------- storage ----------
@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -360,9 +360,14 @@ function renderHero() {
       ${(() => {
         const meta = settings.driveMeta?.[next.key];
         if (next.drive && meta?.src === 'traffic') {
-          return `<p class="drive-note">🚦 Trafikle yol <b>${next.drive} dk</b>${meta.delayMin ? ` (+${meta.delayMin} dk yoğunluk)` : ''} · ${meta.mode === 'planned' ? `${next.leave.slice(11)} çıkışı için tahmini trafik` : 'şu anki trafik'} · güncelleme ${hhmm(meta.at)}<br>Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk</p>`;
+          return `<div class="traffic-big">
+            <span class="tb-icon" aria-hidden="true">🚦</span>
+            <div><small>Trafikli yol</small><b>${next.drive} dk</b></div>
+            <span class="tb-meta">${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : 'Trafik normal<br>'}${meta.mode === 'planned' ? `${next.leave.slice(11)} çıkışı için tahmin` : 'şu anki trafik'} · ${hhmm(meta.at)}</span>
+          </div>
+          <p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk − ${DRIVE_BUFFER_MIN} dk pay</p>`;
         }
-        if (next.drive) return `<p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk (elle girildi)</p>`;
+        if (next.drive) return `<p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk − ${DRIVE_BUFFER_MIN} dk pay (elle girildi)</p>`;
         return `<p class="drive-note">Şu an sabit kural: kalkıştan ${minLabel(next.leaveBefore)} önce. ${trafficReady() ? 'Trafik uçuştan 48 saat önce otomatik hesaplanır.' : 'Yol süresini yazarsan ya da ⚙️ Ayarlar\'dan trafik servisini açarsan imza − 40 dk − yol süresi olarak hesaplanır.'}</p>`;
       })()}
       ${trafficReady() ? `<button class="maps-btn on-dark" data-traffic>🔄 Trafiği şimdi hesapla</button>` : ''}` : ''}`;
@@ -451,7 +456,7 @@ function tripHtml(t) {
       <div class="ap r"><b>${l.arr}</b><span>${esc(city(l.to))} · ${esc(fmtShort(l.arrDate))}</span></div>
     </div>`).join('');
   const steps = [];
-  if (t.leave) steps.push({ t: t.leave.slice(11), d: 'Evden çıkış', s: t.drive ? `İmza − 40 dk − yol ${t.drive} dk` : `Kalkıştan ${minLabel(t.leaveBefore)} önce${t.cargo ? ' (kargo)' : ''}`, hl: true });
+  if (t.leave) steps.push({ t: t.leave.slice(11), d: 'Evden çıkış', s: t.drive ? `İmza − 40 dk − yol ${t.drive} dk − ${DRIVE_BUFFER_MIN} dk pay` : `Kalkıştan ${minLabel(t.leaveBefore)} önce${t.cargo ? ' (kargo)' : ''}`, hl: true });
   if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
   steps.push({ t: t.first.dep, d: `Kalkış: ${city(t.first.from)} → ${city(t.first.to)}`, s: t.first.flight });
   if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}`, s: t.last.flight });
