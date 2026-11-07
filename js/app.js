@@ -13,8 +13,9 @@ const store = {
   set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch { toast('Kaydedilemedi (depolama kapalı olabilir).'); } },
 };
 let rosters = store.get('rosters', {});
-let settings = { leaveHours: 3, ...store.get('settings', {}) };
-const APP_VERSION = 8;
+let settings = { leaveMin: 190, ...store.get('settings', {}) };
+delete settings.leaveHours; // old setting (hours) replaced by leaveMin
+const APP_VERSION = 9;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -23,7 +24,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const MONTH_FMT = new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric' });
 const monthName = (key) => MONTH_FMT.format(new Date(key + '-15T12:00:00Z'));
 const keys = () => Object.keys(rosters).sort();
-const hoursLabel = (h) => (Number.isInteger(h) ? `${h} saat` : `${Math.floor(h)},5 saat`);
+const minLabel = (m) => (m % 60 ? `${Math.floor(m / 60)} sa ${m % 60} dk` : `${m / 60} saat`);
 
 function toast(msg) {
   const t = $('#toast');
@@ -312,7 +313,7 @@ function renderMonth(r) {
   for (const d of days) {
     const label = d.kind === 'depart' ? `✈ ${d.label}` : d.kind === 'return' ? '↩ Dönüş' : d.label;
     html.push(`<button class="cell k-${d.kind}${d.date === today ? ' today' : ''}" data-date="${d.date}"${homeStyle(d)} aria-label="${esc(fmtDay(d.date))}: ${esc(label)}${d.sub ? ', ' + esc(d.sub) : ''}">
-      <span class="n">${d.day}</span><span class="lbl">${esc(label)}</span>${d.sub ? `<span class="sub">${esc(d.sub)}</span>` : ''}</button>`);
+      ${d.trip?.cargo && ['depart', 'away', 'return'].includes(d.kind) ? '<span class="kbadge" title="Kargo uçuşu">K</span>' : ''}<span class="n">${d.day}</span><span class="lbl">${esc(label)}</span>${d.sub ? `<span class="sub">${esc(d.sub)}</span>` : ''}</button>`);
   }
   cal.innerHTML = html.join('');
   cal._days = days;
@@ -331,7 +332,7 @@ function renderTrips(r) {
   const T = trips(r, settings);
   $('#tripList').innerHTML = T.length ? T.map((t, i) => `
     <button class="trip${t.returnStamp && istDate(t.returnStamp) < now ? ' past' : ''}" data-trip="${i}">
-      <h4>✈ ${esc(t.title)}</h4>
+      <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h4>
       <p class="dates">${esc(fmtShort(t.first.depDate))} → ${esc(fmtShort(t.last.arrDate))} · ${esc(t.legs.map((l) => l.flight).join(', '))}</p>
       <div class="row">
         ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b></span>` : ''}
@@ -365,7 +366,7 @@ function tripHtml(t) {
       <div class="ap r"><b>${l.arr}</b><span>${esc(city(l.to))} · ${esc(fmtShort(l.arrDate))}</span></div>
     </div>`).join('');
   const steps = [];
-  if (t.leave) steps.push({ t: t.leave.slice(11), d: 'Evden çıkış', s: `Kalkıştan ${hoursLabel(settings.leaveHours)} önce`, hl: true });
+  if (t.leave) steps.push({ t: t.leave.slice(11), d: 'Evden çıkış', s: `Kalkıştan ${minLabel(t.leaveBefore)} önce${t.cargo ? ' (kargo)' : ''}`, hl: true });
   if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
   steps.push({ t: t.first.dep, d: `Kalkış: ${city(t.first.from)} → ${city(t.first.to)}`, s: t.first.flight });
   if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}`, s: t.last.flight });
@@ -377,7 +378,7 @@ function tripHtml(t) {
       <dt>Dinlenme</dt><dd>${esc(y.rest)} saat</dd>
     </dl>`).join('');
   return `
-    <h2>✈ ${esc(t.title)}</h2>
+    <h2>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h2>
     <p class="muted">${esc(fmtDay(t.first.depDate))} → ${esc(fmtDay(t.last.arrDate))}</p>
     <div class="card"><h3>Özet (Türkiye saati)</h3>
       <ul class="timeline">${steps.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul>
@@ -437,9 +438,10 @@ function openSettings() {
     <p class="muted">Bu ayarlar sadece bu cihazda saklanır.</p>
     <div class="card settings">
       <h3>Evden çıkış</h3>
-      <div class="row"><span>Kalkıştan ne kadar önce?</span>
-        <div class="stepper"><button data-step="-0.5" aria-label="Azalt">−</button><output id="lh">${hoursLabel(settings.leaveHours)}</output><button data-step="0.5" aria-label="Arttır">+</button></div>
+      <div class="row"><span>Yolcu uçuşu: kalkıştan ne kadar önce?</span>
+        <div class="stepper"><button data-step="-10" aria-label="Azalt">−</button><output id="lh">${minLabel(settings.leaveMin)}</output><button data-step="10" aria-label="Arttır">+</button></div>
       </div>
+      <p class="footnote" style="margin:4px 0 0">Kargo uçuşlarında imza 1 saat önce olduğu için evden çıkış 30 dk daha geç: <b id="lhc">${minLabel(settings.leaveMin - 30)}</b> önce.</p>
     </div>
     <div class="card stack">
       <h3>Program</h3>
@@ -456,9 +458,10 @@ $('#menuBtn').onclick = openSettings;
 $('#sheet').addEventListener('click', async (e) => {
   const step = e.target.closest('[data-step]');
   if (step) {
-    settings.leaveHours = Math.min(6, Math.max(1, settings.leaveHours + Number(step.dataset.step)));
+    settings.leaveMin = Math.min(360, Math.max(90, settings.leaveMin + Number(step.dataset.step)));
     store.set('settings', settings);
-    $('#lh').textContent = hoursLabel(settings.leaveHours);
+    $('#lh').textContent = minLabel(settings.leaveMin);
+    $('#lhc').textContent = minLabel(settings.leaveMin - 30);
     render();
   }
   const del = e.target.closest('[data-del]');

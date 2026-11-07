@@ -22,6 +22,13 @@ export const CODE_INFO = {
   GG: { label: 'Görev', long: 'Önceki aydan devam eden görev', kind: 'prev' },
 };
 
+export const CARGO_LATER_MIN = 30;
+/** Minutes before departure to leave home (passenger default 3h10; cargo 30 min less). */
+export const leaveMinutes = (settings, cargo) => {
+  const base = settings.leaveMin ?? 190;
+  return cargo ? base - CARGO_LATER_MIN : base;
+};
+
 /** Enrich trips: home departure, leave-home time, return. */
 export function trips(roster, settings) {
   return roster.duties.filter((d) => d.type === 'trip' && d.legs.length).map((d) => {
@@ -29,7 +36,11 @@ export function trips(roster, settings) {
     const last = d.legs[d.legs.length - 1];
     const fromHome = first.from === HOME;
     const depStamp = `${first.depDate}T${first.dep}`;
-    const leave = fromHome ? shiftStamp(depStamp, -Math.round(settings.leaveHours * 60)) : null;
+    // Cargo: sign-in 1h before departure (passenger: 1.5h) -> leave home 30 min later.
+    const signInGap = (istDate(depStamp) - istDate(d.report)) / 60000;
+    const cargo = fromHome && (signInGap > 0 ? signInGap <= 65 : /^TK6\d{3}$/.test(first.flight));
+    const leaveBefore = leaveMinutes(settings, cargo);
+    const leave = fromHome ? shiftStamp(depStamp, -leaveBefore) : null;
     const dests = [...new Set(d.legs.map((l) => l.to).filter((s) => s && s !== HOME))];
     const main = d.layovers[0]?.station || dests[dests.length - 1] || last.to;
     // time on the ground at each station: landing -> next departure (both local to that city)
@@ -42,7 +53,7 @@ export function trips(roster, settings) {
     });
     return {
       ...d,
-      stays,
+      stays, cargo, leaveBefore,
       first, last, leave, depStamp,
       reportStamp: d.report,
       returnStamp: last.to === HOME ? `${last.arrDate}T${last.arr}` : null,
