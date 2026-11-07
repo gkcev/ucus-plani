@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -299,7 +299,6 @@ async function refreshTraffic(t, { quiet = false } = {}) {
 function maybeAutoTraffic(t) {
   if (!trafficReady() || !t?.leave || t.first.from !== HOME) return;
   const meta = settings.driveMeta?.[t.key];
-  if (meta?.src === 'manual') return; // user typed a value: respect it
   const toLeave = istDate(t.leave) - Date.now();
   if (toLeave > 48 * 3600000 || toLeave < -3600000) return;
   const age = meta?.at ? Date.now() - Date.parse(meta.at) : Infinity;
@@ -350,18 +349,18 @@ function renderHero() {
     <p class="countdown">Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>
     ${next.first.from === HOME ? `
       ${mapsLink('maps-btn on-dark')}
-      <form class="drive" data-key="${esc(next.key)}">
+      ${trafficReady() ? '' : `<form class="drive" data-key="${esc(next.key)}">
         <label>Maps'teki yol süresi
           <input type="number" inputmode="numeric" min="5" max="300" step="1" placeholder="örn. 60" value="${next.drive || ''}" aria-label="Yol süresi, dakika">
           <span>dk</span>
         </label>
         <button type="submit">Hesapla</button>
         ${next.drive ? '<button type="button" data-reset>Sıfırla</button>' : ''}
-      </form>
+      </form>`}
       ${(() => {
         const meta = settings.driveMeta?.[next.key];
         if (next.drive && meta?.src === 'traffic') {
-          return `<p class="drive-note">🚦 Trafikle yol <b>${next.drive} dk</b>${meta.delayMin ? ` (+${meta.delayMin} dk yoğunluk)` : ''} · güncelleme ${hhmm(meta.at)}<br>Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk</p>`;
+          return `<p class="drive-note">🚦 Trafikle yol <b>${next.drive} dk</b>${meta.delayMin ? ` (+${meta.delayMin} dk yoğunluk)` : ''} · ${meta.mode === 'planned' ? `${next.leave.slice(11)} çıkışı için tahmini trafik` : 'şu anki trafik'} · güncelleme ${hhmm(meta.at)}<br>Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk</p>`;
         }
         if (next.drive) return `<p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk (elle girildi)</p>`;
         return `<p class="drive-note">Şu an sabit kural: kalkıştan ${minLabel(next.leaveBefore)} önce. ${trafficReady() ? 'Trafik uçuştan 48 saat önce otomatik hesaplanır.' : 'Yol süresini yazarsan ya da ⚙️ Ayarlar\'dan trafik servisini açarsan imza − 40 dk − yol süresi olarak hesaplanır.'}</p>`;
