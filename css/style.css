@@ -312,3 +312,6 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .traffic-big small { display: block; font-size: 12.5px; opacity: .75; white-space: nowrap; }
 .traffic-big b { display: block; white-space: nowrap; font-size: 34px; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .traffic-big .tb-meta { text-align: right; font-size: 12px; opacity: .8; line-height: 1.35; }
+.traffic-big .tb-now { grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.15); font-size: 15px; }
+.traffic-big .tb-now b { display: inline; font-size: 20px; }
+.traffic-big .tb-now span { font-size: 12.5px; opacity: .75; }

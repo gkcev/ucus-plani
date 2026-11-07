@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -285,8 +285,10 @@ async function refreshTraffic(t, { quiet = false } = {}) {
   try {
     const arriveBy = shiftStamp(t.reportStamp, -SIGNIN_BUFFER_MIN); // be at the airport 40 min before sign-in
     const r = await driveTime({ key: settings.googleKey, home: settings.home, arriveBy, guessMin: t.drive || 60 });
-    countCall(r.calls);
-    setDrive(t.key, r.minutes, { src: 'traffic', delayMin: r.delayMin, km: r.km, mode: r.mode }, true);
+    // plus "if you left right now" (skip the extra call when the plan already used live traffic)
+    const nowR = r.mode === 'now' ? r : await driveTime({ key: settings.googleKey, home: settings.home, arriveBy: null });
+    countCall(r.calls + (nowR === r ? 0 : nowR.calls));
+    setDrive(t.key, r.minutes, { src: 'traffic', delayMin: r.delayMin, km: r.km, mode: r.mode, nowMin: nowR.minutes, nowDelay: nowR.delayMin }, true);
     if (!quiet) toast(`Trafik güncellendi: yol ${r.minutes} dk`);
   } catch (err) {
     if (!quiet) toast(err.message);
@@ -364,6 +366,7 @@ function renderHero() {
             <span class="tb-icon" aria-hidden="true">🚦</span>
             <div><small>Trafikli yol</small><b>${next.drive} dk</b></div>
             <span class="tb-meta">${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : 'Trafik normal<br>'}${meta.mode === 'planned' ? `${next.leave.slice(11)} çıkışı için tahmin` : 'şu anki trafik'} · ${hhmm(meta.at)}</span>
+            ${meta.mode === 'planned' && meta.nowMin ? `<div class="tb-now">Şu an çıksan: <b>${meta.nowMin} dk</b>${meta.nowDelay ? ` <span>(+${meta.nowDelay} dk yoğunluk)</span>` : ''}</div>` : ''}
           </div>
           <p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk − ${DRIVE_BUFFER_MIN} dk pay</p>`;
         }
