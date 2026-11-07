@@ -1,8 +1,9 @@
 import { parseRoster } from './parser.js';
 import { city } from './stations.js';
+import { driveTime, geocode, currentPosition } from './traffic.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, CODE_INFO, HOME,
-  monthStats, fmtDur, fmtHM,
+  monthStats, fmtDur, fmtHM, shiftStamp, SIGNIN_BUFFER_MIN,
 } from './model.js';
 
 // ---------- storage ----------
@@ -15,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -259,13 +260,52 @@ function allTrips() {
     .filter((t, i, a) => a.findIndex((x) => x.depStamp === t.depStamp && x.first.flight === t.first.flight) === i);
 }
 
-function setDrive(key, minutes) {
+function setDrive(key, minutes, meta = { src: 'manual' }, quiet = false) {
   settings.drive = { ...(settings.drive || {}) };
-  if (minutes) settings.drive[key] = minutes; else delete settings.drive[key];
+  settings.driveMeta = { ...(settings.driveMeta || {}) };
+  if (minutes) { settings.drive[key] = minutes; settings.driveMeta[key] = { ...meta, at: new Date().toISOString() }; }
+  else { delete settings.drive[key]; delete settings.driveMeta[key]; }
   store.set('settings', settings);
   render();
-  toast(minutes ? `Yol ${minutes} dk ile hesaplandı` : 'Sabit kurala dönüldü');
+  if (!quiet) toast(minutes ? `Yol ${minutes} dk ile hesaplandı` : 'Sabit kurala dönüldü');
 }
+
+// ---------- live traffic (TomTom) ----------
+const trafficReady = () => !!(settings.tomtomKey && settings.home);
+let trafficBusy = false;
+function countCall() {
+  const m = new Date().toISOString().slice(0, 7);
+  settings.apiCalls = { [m]: (settings.apiCalls?.[m] || 0) + 1 };
+  store.set('settings', settings);
+}
+async function refreshTraffic(t, { quiet = false } = {}) {
+  if (!trafficReady() || trafficBusy || !t?.key) return;
+  trafficBusy = true;
+  try {
+    const arriveBy = shiftStamp(t.reportStamp, -SIGNIN_BUFFER_MIN); // be at the airport 40 min before sign-in
+    const r = await driveTime({ key: settings.tomtomKey, home: settings.home, arriveBy });
+    countCall();
+    setDrive(t.key, r.minutes, { src: 'tomtom', delayMin: r.delayMin, km: r.km, mode: r.mode }, true);
+    if (!quiet) toast(`Trafik güncellendi: yol ${r.minutes} dk`);
+  } catch (err) {
+    if (!quiet) toast(err.message);
+    else console.warn(err);
+  } finally {
+    trafficBusy = false;
+  }
+}
+// Automatic refresh for the next flight: only within 48h of leaving; every 20 min in the last 4h, else every 6h.
+function maybeAutoTraffic(t) {
+  if (!trafficReady() || !t?.leave || t.first.from !== HOME) return;
+  const meta = settings.driveMeta?.[t.key];
+  if (meta?.src === 'manual') return; // user typed a value: respect it
+  const toLeave = istDate(t.leave) - Date.now();
+  if (toLeave > 48 * 3600000 || toLeave < -3600000) return;
+  const age = meta?.at ? Date.now() - Date.parse(meta.at) : Infinity;
+  const ttl = toLeave < 4 * 3600000 ? 20 * 60000 : 6 * 3600000;
+  if (age > ttl) refreshTraffic(t, { quiet: true });
+}
+const hhmm = (iso) => new Date(Date.parse(iso) + 3 * 3600000).toISOString().slice(11, 16);
 
 function renderHero() {
   const now = new Date();
@@ -317,10 +357,20 @@ function renderHero() {
         <button type="submit">Hesapla</button>
         ${next.drive ? '<button type="button" data-reset>Sıfırla</button>' : ''}
       </form>
-      <p class="drive-note">${next.drive
-        ? `Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk`
-        : `Şu an sabit kural: kalkıştan ${minLabel(next.leaveBefore)} önce. Yol süresini yazarsan imza − 40 dk − yol süresi olarak hesaplanır.`}</p>` : ''}`;
-  el.onclick = (e) => { if (!e.target.closest('[data-maps], .drive')) openTrip(next); };
+      ${(() => {
+        const meta = settings.driveMeta?.[next.key];
+        if (next.drive && meta?.src === 'tomtom') {
+          return `<p class="drive-note">🚦 Trafikle yol <b>${next.drive} dk</b>${meta.delayMin ? ` (+${meta.delayMin} dk yoğunluk)` : ''} · güncelleme ${hhmm(meta.at)}<br>Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk</p>`;
+        }
+        if (next.drive) return `<p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk (elle girildi)</p>`;
+        return `<p class="drive-note">Şu an sabit kural: kalkıştan ${minLabel(next.leaveBefore)} önce. ${trafficReady() ? 'Trafik uçuştan 48 saat önce otomatik hesaplanır.' : 'Yol süresini yazarsan ya da ⚙️ Ayarlar\'dan trafik servisini açarsan imza − 40 dk − yol süresi olarak hesaplanır.'}</p>`;
+      })()}
+      ${trafficReady() ? `<button class="maps-btn on-dark" data-traffic>🔄 Trafiği şimdi hesapla</button>` : ''}` : ''}`;
+  el.onclick = (e) => {
+    if (e.target.closest('[data-traffic]')) return refreshTraffic(next);
+    if (!e.target.closest('[data-maps], .drive')) openTrip(next);
+  };
+  maybeAutoTraffic(next);
   const form = el.querySelector('.drive');
   if (form) {
     form.onsubmit = (e) => {
@@ -484,6 +534,20 @@ function openSettings() {
       </div>
       <p class="footnote" style="margin:4px 0 0">Kargo uçuşlarında imza 1 saat önce olduğu için evden çıkış 30 dk daha geç: <b id="lhc">${minLabel(settings.leaveMin - 30)}</b> önce.</p>
     </div>
+    <div class="card stack" id="trafficCard">
+      <h3>Trafik (TomTom)</h3>
+      <p class="footnote" style="margin:0">Uçuştan önceki 48 saatte evden çıkış, trafiğe göre <b>imza − 40 dk − yol süresi</b> olarak hesaplanır.</p>
+      <label class="field">API anahtarı
+        <input id="ttKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="TomTom API key" value="${esc(settings.tomtomKey || '')}">
+      </label>
+      <button class="btn block" id="ttSaveKey">Anahtarı kaydet</button>
+      <label class="field">Ev adresi
+        <input id="ttAddr" type="text" placeholder="Mahalle, sokak, ilçe" value="">
+      </label>
+      <div class="two"><button class="btn" id="ttFind">Adresi bul</button><button class="btn" id="ttHere">📍 Şu an evdeyim</button></div>
+      <p class="footnote" style="margin:0" id="ttHome">${settings.home ? `Kayıtlı ev: <b>${esc(settings.home.label)}</b>` : 'Ev konumu kayıtlı değil.'}</p>
+      <p class="footnote" style="margin:0">Bu ay ${settings.apiCalls?.[new Date().toISOString().slice(0, 7)] || 0} trafik sorgusu yapıldı. Anahtar ve ev konumu sadece bu telefonda saklanır; ev konumu yol süresi için TomTom'a gönderilir.</p>
+    </div>
     <div class="card stack">
       <h3>Program</h3>
       <label class="btn primary block">Yeni ay PDF'i yükle<input type="file" accept="application/pdf,.pdf" class="file-input" hidden></label>
@@ -497,6 +561,27 @@ function openSettings() {
 $('#menuBtn').onclick = openSettings;
 
 $('#sheet').addEventListener('click', async (e) => {
+  const id = e.target.id;
+  if (id === 'ttSaveKey') {
+    settings.tomtomKey = $('#ttKey').value.trim() || undefined;
+    store.set('settings', settings);
+    toast(settings.tomtomKey ? 'Anahtar kaydedildi' : 'Anahtar silindi');
+    render();
+  }
+  if (id === 'ttFind' || id === 'ttHere') {
+    try {
+      if (id === 'ttFind' && !settings.tomtomKey) throw new Error('Önce API anahtarını kaydet');
+      const q = $('#ttAddr').value.trim();
+      if (id === 'ttFind' && !q) throw new Error('Adres yaz');
+      const home = id === 'ttFind' ? await geocode({ key: settings.tomtomKey, query: q }) : await currentPosition();
+      if (id === 'ttFind') countCall();
+      settings.home = home;
+      store.set('settings', settings);
+      $('#ttHome').innerHTML = `Kayıtlı ev: <b>${esc(home.label)}</b>`;
+      toast('Ev konumu kaydedildi');
+      render();
+    } catch (err) { toast(err.message); }
+  }
   const step = e.target.closest('[data-step]');
   if (step) {
     settings.leaveMin = Math.min(360, Math.max(90, settings.leaveMin + Number(step.dataset.step)));

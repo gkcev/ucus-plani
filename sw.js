@@ -1,8 +1,8 @@
 // Offline cache for the app shell. Bump VERSION when files change.
-const VERSION = 'ucus-v11';
+const VERSION = 'ucus-v12';
 const ASSETS = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
-  'js/app.js', 'js/parser.js', 'js/model.js', 'js/stations.js',
+  'js/app.js', 'js/parser.js', 'js/model.js', 'js/stations.js', 'js/traffic.js',
   'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
