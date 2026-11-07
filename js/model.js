@@ -23,6 +23,8 @@ export const CODE_INFO = {
 };
 
 export const CARGO_LATER_MIN = 30;
+export const SIGNIN_BUFFER_MIN = 40; // arrive this long before sign-in
+export const tripKey = (depStamp, flight) => `${depStamp}-${flight}`;
 /** Minutes before departure to leave home (passenger default 3h10; cargo 30 min less). */
 export const leaveMinutes = (settings, cargo) => {
   const base = settings.leaveMin ?? 190;
@@ -39,7 +41,12 @@ export function trips(roster, settings) {
     // Cargo: sign-in 1h before departure (passenger: 1.5h) -> leave home 30 min later.
     const signInGap = (istDate(depStamp) - istDate(d.report)) / 60000;
     const cargo = fromHome && (signInGap > 0 ? signInGap <= 65 : /^TK6\d{3}$/.test(first.flight));
-    const leaveBefore = leaveMinutes(settings, cargo);
+    // If a drive time was entered (from Google Maps): leave = sign-in − 40 min − drive time.
+    const key = tripKey(depStamp, first.flight);
+    const drive = fromHome ? settings.drive?.[key] : null;
+    const leaveBefore = drive
+      ? Math.round((istDate(depStamp) - istDate(d.report)) / 60000) + SIGNIN_BUFFER_MIN + drive
+      : leaveMinutes(settings, cargo);
     const leave = fromHome ? shiftStamp(depStamp, -leaveBefore) : null;
     const dests = [...new Set(d.legs.map((l) => l.to).filter((s) => s && s !== HOME))];
     const main = d.layovers[0]?.station || dests[dests.length - 1] || last.to;
@@ -53,7 +60,7 @@ export function trips(roster, settings) {
     });
     return {
       ...d,
-      stays, cargo, leaveBefore,
+      stays, cargo, leaveBefore, key, drive: drive || null,
       first, last, leave, depStamp,
       reportStamp: d.report,
       returnStamp: last.to === HOME ? `${last.arrDate}T${last.arr}` : null,

@@ -15,7 +15,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -259,6 +259,14 @@ function allTrips() {
     .filter((t, i, a) => a.findIndex((x) => x.depStamp === t.depStamp && x.first.flight === t.first.flight) === i);
 }
 
+function setDrive(key, minutes) {
+  settings.drive = { ...(settings.drive || {}) };
+  if (minutes) settings.drive[key] = minutes; else delete settings.drive[key];
+  store.set('settings', settings);
+  render();
+  toast(minutes ? `Yol ${minutes} dk ile hesaplandı` : 'Sabit kurala dönüldü');
+}
+
 function renderHero() {
   const now = new Date();
   const T = allTrips();
@@ -299,8 +307,29 @@ function renderHero() {
       <div class="hero-cell"><small>Eve iniş${next.returnStamp ? ' · ' + esc(fmtShort(next.returnStamp.slice(0, 10)).replace(/ \S+$/, '')) : ''}</small><b>${next.returnStamp ? next.returnStamp.slice(11) : '–'}</b></div>
     </div>
     <p class="countdown">Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>
-    ${next.first.from === HOME ? mapsLink('maps-btn on-dark') : ''}`;
-  el.onclick = (e) => { if (!e.target.closest('[data-maps]')) openTrip(next); };
+    ${next.first.from === HOME ? `
+      ${mapsLink('maps-btn on-dark')}
+      <form class="drive" data-key="${esc(next.key)}">
+        <label>Maps'teki yol süresi
+          <input type="number" inputmode="numeric" min="5" max="300" step="1" placeholder="örn. 60" value="${next.drive || ''}" aria-label="Yol süresi, dakika">
+          <span>dk</span>
+        </label>
+        <button type="submit">Hesapla</button>
+        ${next.drive ? '<button type="button" data-reset>Sıfırla</button>' : ''}
+      </form>
+      <p class="drive-note">${next.drive
+        ? `Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk`
+        : `Şu an sabit kural: kalkıştan ${minLabel(next.leaveBefore)} önce. Yol süresini yazarsan imza − 40 dk − yol süresi olarak hesaplanır.`}</p>` : ''}`;
+  el.onclick = (e) => { if (!e.target.closest('[data-maps], .drive')) openTrip(next); };
+  const form = el.querySelector('.drive');
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const v = Math.round(Number(form.querySelector('input').value));
+      setDrive(form.dataset.key, v >= 5 && v <= 300 ? v : null);
+    };
+    form.querySelector('[data-reset]')?.addEventListener('click', () => setDrive(form.dataset.key, null));
+  }
 }
 
 function renderMonth(r) {
@@ -372,7 +401,7 @@ function tripHtml(t) {
       <div class="ap r"><b>${l.arr}</b><span>${esc(city(l.to))} · ${esc(fmtShort(l.arrDate))}</span></div>
     </div>`).join('');
   const steps = [];
-  if (t.leave) steps.push({ t: t.leave.slice(11), d: 'Evden çıkış', s: `Kalkıştan ${minLabel(t.leaveBefore)} önce${t.cargo ? ' (kargo)' : ''}`, hl: true });
+  if (t.leave) steps.push({ t: t.leave.slice(11), d: 'Evden çıkış', s: t.drive ? `İmza − 40 dk − yol ${t.drive} dk` : `Kalkıştan ${minLabel(t.leaveBefore)} önce${t.cargo ? ' (kargo)' : ''}`, hl: true });
   if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
   steps.push({ t: t.first.dep, d: `Kalkış: ${city(t.first.from)} → ${city(t.first.to)}`, s: t.first.flight });
   if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}`, s: t.last.flight });
