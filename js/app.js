@@ -321,8 +321,8 @@ function renderMonth(r) {
 function homeStyle(d) {
   if (!d.home) return '';
   const u = Math.round(d.home.until * 100), f = Math.round(d.home.from * 100);
-  const duty = d.kind === 'return' ? 'var(--return-bg)' : 'var(--depart-bg)';
-  return ` style="background:linear-gradient(90deg, var(--home-bg) 0 ${u}%, ${duty} ${u}% ${f}%, var(--home-bg) ${f}% 100%)"`;
+  const duty = d.kind === 'return' ? 'var(--away-bg)' : 'var(--depart-bg)';
+  return ` style="background:linear-gradient(90deg, var(--off-bg) 0 ${u}%, ${duty} ${u}% ${f}%, var(--off-bg) ${f}% 100%)"`;
 }
 
 function renderTrips(r) {

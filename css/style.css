@@ -16,7 +16,6 @@
   --standby-bg: #fff1d9;
   --off: #3f8f4f;
   --off-bg: #e6f4e8;
-  --home-bg: #d3eed8;
   --prev: #6b7280;
   --prev-bg: #eceef1;
   --radius: 16px;
@@ -35,7 +34,6 @@
     --return-bg: #12332f;
     --standby-bg: #3a2a10;
     --off-bg: #17301c;
-    --home-bg: #1d3d24;
     --prev-bg: #23292f;
     --depart: #ff6b77;
     --away: #9ea1ff;
@@ -139,12 +137,12 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 @media (prefers-color-scheme: dark) { .cell.today { outline-color: #fff; } }
 .cell.k-depart { background: var(--depart-bg); color: var(--depart); }
 .cell.k-away { background: var(--away-bg); color: var(--away); }
-.cell.k-return { background: var(--return-bg); color: var(--return); }
+.cell.k-return { background: var(--away-bg); color: var(--away); }
 .cell.k-standby { background: var(--standby-bg); color: var(--standby); }
 .cell.k-off { background: var(--off-bg); color: var(--off); }
-.cell.k-rest, .cell.k-free { color: var(--off); }
+.cell.k-rest, .cell.k-free { background: var(--off-bg); color: var(--off); }
 .cell.k-prev { background: var(--prev-bg); color: var(--prev); }
-.cell.k-depart .n, .cell.k-away .n, .cell.k-return .n, .cell.k-standby .n, .cell.k-off .n, .cell.k-prev .n { color: inherit; opacity: .8; }
+.cell.k-depart .n, .cell.k-away .n, .cell.k-return .n, .cell.k-standby .n, .cell.k-off .n, .cell.k-rest .n, .cell.k-free .n, .cell.k-prev .n { color: inherit; opacity: .8; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 4px 0; font-size: 12.5px; color: var(--muted); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
