@@ -1,53 +1,81 @@
-// Live / predicted drive time from home to Istanbul Airport via the TomTom Routing API.
-// The API key and home position live only in this device's localStorage (never in the repo).
-// Free tier: 2,500 requests/day; this app makes a handful per month.
+// Drive time from home to Istanbul Airport with traffic, via the Google Maps Routes API
+// (routes.googleapis.com, callable from the browser). The API key and home location live
+// only in this device's localStorage – never in the repo.
 
 // İstanbul Havalimanı (IST) – airport reference point
 export const IST_AIRPORT = { lat: 41.2614, lon: 28.7422 };
 
-async function call(url) {
+const waypoint = (p) => (p.address
+  ? { address: p.address }
+  : { location: { latLng: { latitude: p.lat, longitude: p.lon } } });
+const secs = (s) => Number(String(s || '0').replace('s', '')) || 0;
+
+async function route(key, home, departure) {
+  const body = {
+    origin: waypoint(home),
+    destination: waypoint(IST_AIRPORT),
+    travelMode: 'DRIVE',
+    routingPreference: 'TRAFFIC_AWARE_OPTIMAL',
+    languageCode: 'tr',
+    regionCode: 'TR',
+  };
+  if (departure) body.departureTime = departure.toISOString();
   let res;
   try {
-    res = await fetch(url);
+    res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'routes.duration,routes.staticDuration,routes.distanceMeters',
+      },
+      body: JSON.stringify(body),
+    });
   } catch {
-    throw new Error('Trafik servisine bağlanılamadı (internet?)');
+    throw new Error('Google Maps\'e bağlanılamadı (internet?)');
   }
-  if (res.status === 401 || res.status === 403) throw new Error('TomTom API anahtarı geçersiz');
-  if (res.status === 429) throw new Error('TomTom sorgu limiti doldu, sonra tekrar dene');
-  if (!res.ok) throw new Error(`Trafik servisi hata verdi (${res.status})`);
-  return res.json();
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = j.error?.message || '';
+    if (/API key not valid/i.test(msg)) throw new Error('Google API anahtarı geçersiz');
+    if (res.status === 403) throw new Error('Anahtar izinli değil: Routes API açık mı, faturalandırma var mı, site kısıtı doğru mu?');
+    if (res.status === 429) throw new Error('Google sorgu limiti doldu');
+    if (res.status === 400 && /origin|address|waypoint/i.test(msg)) throw new Error('Ev adresi bulunamadı, daha açık yaz');
+    throw new Error(`Google Maps hata verdi (${res.status})`);
+  }
+  const r = j.routes?.[0];
+  if (!r) throw new Error('Rota bulunamadı');
+  return { sec: secs(r.duration), staticSec: secs(r.staticDuration), meters: r.distanceMeters || 0 };
 }
 
 /**
- * Drive time home -> airport.
- * arriveBy: Istanbul wall-clock stamp "YYYY-MM-DDTHH:MM" to be at the airport (imza − 40 dk).
- * If that moment is (almost) now or past, uses current traffic (departAt=now).
+ * Drive time home -> airport for arriving at `arriveBy` (Istanbul wall clock "YYYY-MM-DDTHH:MM").
+ * Google has no "arrive by" for cars, so: guess a departure, ask, then ask again at the corrected
+ * departure (2 calls). If the arrival is near/past, uses traffic right now (1 call).
  */
-export async function driveTime({ key, home, arriveBy }) {
-  const params = new URLSearchParams({ key, traffic: 'true', travelMode: 'car', routeType: 'fastest' });
+export async function driveTime({ key, home, arriveBy, guessMin = 60 }) {
   const arriveAt = arriveBy ? new Date(`${arriveBy}:00+03:00`) : null;
-  const future = arriveAt && arriveAt - Date.now() > 20 * 60000;
-  if (future) params.set('arriveAt', `${arriveBy}:00+03:00`);
-  else params.set('departAt', 'now');
-  const url = `https://api.tomtom.com/routing/1/calculateRoute/${home.lat},${home.lon}:${IST_AIRPORT.lat},${IST_AIRPORT.lon}/json?${params}`;
-  const j = await call(url);
-  const s = j.routes?.[0]?.summary;
-  if (!s) throw new Error('Rota bulunamadı');
+  const now = Date.now();
+  let calls = 0;
+  const at = async (dep) => { calls++; return route(key, home, dep); };
+  let r;
+  let mode = 'now';
+  const dep1 = arriveAt ? new Date(arriveAt - guessMin * 60000) : null;
+  if (dep1 && dep1 - now > 5 * 60000) {
+    mode = 'planned';
+    r = await at(dep1);
+    const dep2 = new Date(arriveAt - r.sec * 1000);
+    if (Math.abs(r.sec / 60 - guessMin) > 5 && dep2 - now > 5 * 60000) r = await at(dep2);
+  } else {
+    r = await at(null);
+  }
   return {
-    minutes: Math.ceil(s.travelTimeInSeconds / 60),
-    delayMin: Math.round((s.trafficDelayInSeconds || 0) / 60),
-    km: Math.round(s.lengthInMeters / 100) / 10,
-    mode: future ? 'arriveAt' : 'now',
+    minutes: Math.ceil(r.sec / 60),
+    delayMin: Math.max(0, Math.round((r.sec - r.staticSec) / 60)),
+    km: Math.round(r.meters / 100) / 10,
+    mode,
+    calls,
   };
-}
-
-/** Address text -> { lat, lon, label } (Türkiye only). */
-export async function geocode({ key, query }) {
-  const params = new URLSearchParams({ key, countrySet: 'TR', limit: '1', language: 'tr-TR' });
-  const j = await call(`https://api.tomtom.com/search/2/geocode/${encodeURIComponent(query)}.json?${params}`);
-  const r = j.results?.[0];
-  if (!r) throw new Error('Adres bulunamadı');
-  return { lat: r.position.lat, lon: r.position.lon, label: r.address?.freeformAddress || query };
 }
 
 /** Phone's current position (asks for location permission). */

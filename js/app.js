@@ -1,6 +1,6 @@
 import { parseRoster } from './parser.js';
 import { city } from './stations.js';
-import { driveTime, geocode, currentPosition } from './traffic.js';
+import { driveTime, currentPosition } from './traffic.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, CODE_INFO, HOME,
   monthStats, fmtDur, fmtHM, shiftStamp, SIGNIN_BUFFER_MIN,
@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 12;
+const APP_VERSION = 13;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -270,12 +270,13 @@ function setDrive(key, minutes, meta = { src: 'manual' }, quiet = false) {
   if (!quiet) toast(minutes ? `Yol ${minutes} dk ile hesaplandı` : 'Sabit kurala dönüldü');
 }
 
-// ---------- live traffic (TomTom) ----------
-const trafficReady = () => !!(settings.tomtomKey && settings.home);
+// ---------- live traffic (Google Maps Routes API) ----------
+delete settings.tomtomKey;
+const trafficReady = () => !!(settings.googleKey && settings.home);
 let trafficBusy = false;
-function countCall() {
+function countCall(n = 1) {
   const m = new Date().toISOString().slice(0, 7);
-  settings.apiCalls = { [m]: (settings.apiCalls?.[m] || 0) + 1 };
+  settings.apiCalls = { [m]: (settings.apiCalls?.[m] || 0) + n };
   store.set('settings', settings);
 }
 async function refreshTraffic(t, { quiet = false } = {}) {
@@ -283,9 +284,9 @@ async function refreshTraffic(t, { quiet = false } = {}) {
   trafficBusy = true;
   try {
     const arriveBy = shiftStamp(t.reportStamp, -SIGNIN_BUFFER_MIN); // be at the airport 40 min before sign-in
-    const r = await driveTime({ key: settings.tomtomKey, home: settings.home, arriveBy });
-    countCall();
-    setDrive(t.key, r.minutes, { src: 'tomtom', delayMin: r.delayMin, km: r.km, mode: r.mode }, true);
+    const r = await driveTime({ key: settings.googleKey, home: settings.home, arriveBy, guessMin: t.drive || 60 });
+    countCall(r.calls);
+    setDrive(t.key, r.minutes, { src: 'traffic', delayMin: r.delayMin, km: r.km, mode: r.mode }, true);
     if (!quiet) toast(`Trafik güncellendi: yol ${r.minutes} dk`);
   } catch (err) {
     if (!quiet) toast(err.message);
@@ -359,7 +360,7 @@ function renderHero() {
       </form>
       ${(() => {
         const meta = settings.driveMeta?.[next.key];
-        if (next.drive && meta?.src === 'tomtom') {
+        if (next.drive && meta?.src === 'traffic') {
           return `<p class="drive-note">🚦 Trafikle yol <b>${next.drive} dk</b>${meta.delayMin ? ` (+${meta.delayMin} dk yoğunluk)` : ''} · güncelleme ${hhmm(meta.at)}<br>Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk</p>`;
         }
         if (next.drive) return `<p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk (elle girildi)</p>`;
@@ -535,18 +536,18 @@ function openSettings() {
       <p class="footnote" style="margin:4px 0 0">Kargo uçuşlarında imza 1 saat önce olduğu için evden çıkış 30 dk daha geç: <b id="lhc">${minLabel(settings.leaveMin - 30)}</b> önce.</p>
     </div>
     <div class="card stack" id="trafficCard">
-      <h3>Trafik (TomTom)</h3>
+      <h3>Trafik (Google Maps)</h3>
       <p class="footnote" style="margin:0">Uçuştan önceki 48 saatte evden çıkış, trafiğe göre <b>imza − 40 dk − yol süresi</b> olarak hesaplanır.</p>
       <label class="field">API anahtarı
-        <input id="ttKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="TomTom API key" value="${esc(settings.tomtomKey || '')}">
+        <input id="ttKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Google Maps API key (AIza…)" value="${esc(settings.googleKey || '')}">
       </label>
       <button class="btn block" id="ttSaveKey">Anahtarı kaydet</button>
       <label class="field">Ev adresi
         <input id="ttAddr" type="text" placeholder="Mahalle, sokak, ilçe" value="">
       </label>
-      <div class="two"><button class="btn" id="ttFind">Adresi bul</button><button class="btn" id="ttHere">📍 Şu an evdeyim</button></div>
+      <div class="two"><button class="btn" id="ttFind">Adresi kaydet ve dene</button><button class="btn" id="ttHere">📍 Şu an evdeyim</button></div>
       <p class="footnote" style="margin:0" id="ttHome">${settings.home ? `Kayıtlı ev: <b>${esc(settings.home.label)}</b>` : 'Ev konumu kayıtlı değil.'}</p>
-      <p class="footnote" style="margin:0">Bu ay ${settings.apiCalls?.[new Date().toISOString().slice(0, 7)] || 0} trafik sorgusu yapıldı. Anahtar ve ev konumu sadece bu telefonda saklanır; ev konumu yol süresi için TomTom'a gönderilir.</p>
+      <p class="footnote" style="margin:0">Bu ay ${settings.apiCalls?.[new Date().toISOString().slice(0, 7)] || 0} trafik sorgusu yapıldı. Anahtar ve ev konumu sadece bu telefonda saklanır; ev konumu yol süresi için Google'a gönderilir.</p>
     </div>
     <div class="card stack">
       <h3>Program</h3>
@@ -563,22 +564,24 @@ $('#menuBtn').onclick = openSettings;
 $('#sheet').addEventListener('click', async (e) => {
   const id = e.target.id;
   if (id === 'ttSaveKey') {
-    settings.tomtomKey = $('#ttKey').value.trim() || undefined;
+    settings.googleKey = $('#ttKey').value.trim() || undefined;
     store.set('settings', settings);
-    toast(settings.tomtomKey ? 'Anahtar kaydedildi' : 'Anahtar silindi');
+    toast(settings.googleKey ? 'Anahtar kaydedildi' : 'Anahtar silindi');
     render();
   }
   if (id === 'ttFind' || id === 'ttHere') {
     try {
-      if (id === 'ttFind' && !settings.tomtomKey) throw new Error('Önce API anahtarını kaydet');
+      if (!settings.googleKey) throw new Error('Önce API anahtarını kaydet');
       const q = $('#ttAddr').value.trim();
       if (id === 'ttFind' && !q) throw new Error('Adres yaz');
-      const home = id === 'ttFind' ? await geocode({ key: settings.tomtomKey, query: q }) : await currentPosition();
-      if (id === 'ttFind') countCall();
+      const home = id === 'ttFind' ? { address: q, label: q } : await currentPosition();
+      // test key + address right away with one "traffic now" query
+      const r = await driveTime({ key: settings.googleKey, home, arriveBy: null });
+      countCall(r.calls);
       settings.home = home;
       store.set('settings', settings);
-      $('#ttHome').innerHTML = `Kayıtlı ev: <b>${esc(home.label)}</b>`;
-      toast('Ev konumu kaydedildi');
+      $('#ttHome').innerHTML = `Kayıtlı ev: <b>${esc(home.label)}</b> · şu an havalimanına ${r.minutes} dk (${r.km} km)`;
+      toast('Ev kaydedildi, bağlantı çalışıyor');
       render();
     } catch (err) { toast(err.message); }
   }
