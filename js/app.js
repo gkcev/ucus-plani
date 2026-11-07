@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -500,7 +500,6 @@ function tripHtml(t) {
     </dl>`).join('');
   return `
     <h2>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h2>
-    <p class="muted">${esc(fmtDay(t.first.depDate))} → ${esc(fmtDay(t.last.arrDate))}</p>
     ${t.first.from === HOME ? `<div style="margin-bottom:12px">${mapsLink('maps-btn block')}</div>` : ''}
     <div class="card"><h3>Özet (Türkiye saati)</h3>
       <ul class="timeline">${steps.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul>
@@ -522,12 +521,13 @@ function openDay(d) {
   if (d.trip) {
     const t = d.trip;
     const landing = t.returnStamp && d.kind !== 'depart' ? `
-      <div class="hero" style="margin-bottom:14px">
+      <div class="hero landing">
         <p class="eyebrow">Türkiye'ye iniş</p>
         <h2 style="font-size:38px;line-height:1.1">${t.returnStamp.slice(11)}</h2>
-        <p class="when" style="margin:0">${esc(fmtDay(t.returnStamp.slice(0, 10)))} · ${esc(t.last.flight)} · İstanbul</p>
+        <p class="land-date">${esc(fmtDay(t.returnStamp.slice(0, 10)))}</p>
+        <p class="when" style="margin:0">${esc(t.last.flight)} · İstanbul</p>
       </div>` : '';
-    return openSheet(`<p class="muted" style="margin-top:0">${esc(fmtDay(d.date))}</p>` + landing + tripHtml(t));
+    return openSheet(landing + tripHtml(t));
   }
   let title = 'Evde 🏠', body = 'Bu gün için bir görev yok.';
   if (d.kind === 'off') { title = 'İzinli 🏠'; body = CODE_INFO[d.duty?.type]?.long || 'Boş gün'; }

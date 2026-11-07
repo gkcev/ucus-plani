@@ -322,3 +322,6 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .traffic-btn.is-done { background: #1f7a45; color: #fff; }
 .traffic-btn.is-error { background: #8a2430; color: #fff; }
 .traffic-btn[disabled] { opacity: .8; cursor: progress; }
+.hero.landing { margin: 34px 0 14px; }
+.hero .land-date { margin: 2px 0 6px; font-size: 22px; font-weight: 700; }
+.sheet h2 { margin-top: 0; }
