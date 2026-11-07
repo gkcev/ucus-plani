@@ -15,7 +15,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -149,6 +149,10 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
   store.set('view', view);
   render();
 });
+
+// ---------- Google Maps route to the airport (current location -> IST, live traffic in Maps) ----------
+const MAPS_URL = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent('İstanbul Havalimanı') + '&travelmode=driving';
+const mapsLink = (cls = 'maps-btn') => `<a class="${cls}" href="${MAPS_URL}" target="_blank" rel="noopener" data-maps>🚗 Trafiği gör (Google Maps)</a>`;
 
 // ---------- statistics ----------
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -294,8 +298,9 @@ function renderHero() {
       <div class="hero-cell"><small>Kalkış</small><b>${next.first.dep}</b></div>
       <div class="hero-cell"><small>Eve iniş${next.returnStamp ? ' · ' + esc(fmtShort(next.returnStamp.slice(0, 10)).replace(/ \S+$/, '')) : ''}</small><b>${next.returnStamp ? next.returnStamp.slice(11) : '–'}</b></div>
     </div>
-    <p class="countdown">Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>`;
-  el.onclick = () => openTrip(next);
+    <p class="countdown">Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>
+    ${next.first.from === HOME ? mapsLink('maps-btn on-dark') : ''}`;
+  el.onclick = (e) => { if (!e.target.closest('[data-maps]')) openTrip(next); };
 }
 
 function renderMonth(r) {
@@ -331,7 +336,7 @@ function renderTrips(r) {
   const now = new Date();
   const T = trips(r, settings);
   $('#tripList').innerHTML = T.length ? T.map((t, i) => `
-    <button class="trip${t.returnStamp && istDate(t.returnStamp) < now ? ' past' : ''}" data-trip="${i}">
+    <div class="trip${t.returnStamp && istDate(t.returnStamp) < now ? ' past' : ''}" data-trip="${i}" role="button" tabindex="0">
       <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h4>
       <p class="dates">${esc(fmtShort(t.first.depDate))} → ${esc(fmtShort(t.last.arrDate))} · ${esc(t.legs.map((l) => l.flight).join(', '))}</p>
       <div class="row">
@@ -341,7 +346,8 @@ function renderTrips(r) {
         ${t.returnStamp ? `<span>Eve iniş <b>${t.returnStamp.slice(11)}</b> (${esc(fmtShort(t.returnStamp.slice(0, 10)))})</span>` : ''}
       </div>
       ${t.stays.some((x) => !x.transit) ? `<div class="row stay">${t.stays.filter((x) => !x.transit).map((x) => `<span>📍 ${esc(city(x.station))} kalış: <b>${esc(fmtDur(x.min, { days: true }))}</b></span>`).join('')}</div>` : ''}
-    </button>`).join('') : '<p class="footnote">Bu ay uçuş yok.</p>';
+      ${t.first.from === HOME && !(t.returnStamp && istDate(t.returnStamp) < now) ? mapsLink() : ''}
+    </div>`).join('') : '<p class="footnote">Bu ay uçuş yok.</p>';
   $('#tripList')._trips = T;
 }
 
@@ -380,6 +386,7 @@ function tripHtml(t) {
   return `
     <h2>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h2>
     <p class="muted">${esc(fmtDay(t.first.depDate))} → ${esc(fmtDay(t.last.arrDate))}</p>
+    ${t.first.from === HOME ? `<div style="margin-bottom:12px">${mapsLink('maps-btn block')}</div>` : ''}
     <div class="card"><h3>Özet (Türkiye saati)</h3>
       <ul class="timeline">${steps.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul>
     </div>
@@ -424,8 +431,13 @@ $('#calendar').addEventListener('click', (e) => {
   if (c) openDay($('#calendar')._days.find((d) => d.date === c.dataset.date));
 });
 $('#tripList').addEventListener('click', (e) => {
+  if (e.target.closest('[data-maps]')) return;
   const b = e.target.closest('[data-trip]');
   if (b) openTrip($('#tripList')._trips[+b.dataset.trip]);
+});
+$('#tripList').addEventListener('keydown', (e) => {
+  const b = e.target.closest('[data-trip]');
+  if (b && e.target === b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTrip($('#tripList')._trips[+b.dataset.trip]); }
 });
 $('#prevMonth').onclick = () => { const ks = keys(); viewKey = ks[Math.max(0, ks.indexOf(viewKey) - 1)]; render(); };
 $('#nextMonth').onclick = () => { const ks = keys(); viewKey = ks[Math.min(ks.length - 1, ks.indexOf(viewKey) + 1)]; render(); };

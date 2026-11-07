@@ -1,5 +1,5 @@
 // Offline cache for the app shell. Bump VERSION when files change.
-const VERSION = 'ucus-v9';
+const VERSION = 'ucus-v10';
 const ASSETS = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
   'js/app.js', 'js/parser.js', 'js/model.js', 'js/stations.js',
