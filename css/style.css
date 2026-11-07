@@ -286,3 +286,6 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .mtable th, .mtable td { text-align: right; padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .mtable th:first-child, .mtable td:first-child { text-align: left; }
 .mtable th { color: var(--muted); font-weight: 600; font-size: 12px; }
+
+.trip .row.stay { margin-top: 8px; color: var(--away); }
+.trip .row.stay b { color: var(--text); }

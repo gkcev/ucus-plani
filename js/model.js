@@ -32,8 +32,17 @@ export function trips(roster, settings) {
     const leave = fromHome ? shiftStamp(depStamp, -Math.round(settings.leaveHours * 60)) : null;
     const dests = [...new Set(d.legs.map((l) => l.to).filter((s) => s && s !== HOME))];
     const main = d.layovers[0]?.station || dests[dests.length - 1] || last.to;
+    // time on the ground at each station: landing -> next departure (both local to that city)
+    const stays = [];
+    d.legs.forEach((l, i) => {
+      const n = d.legs[i + 1];
+      if (!n || n.from !== l.to) return;
+      const min = (Date.parse(`${n.depDate}T${n.dep}:00Z`) - Date.parse(`${l.arrDate}T${l.arr}:00Z`)) / 60000;
+      if (min > 0) stays.push({ station: l.to, min, transit: min < 240 });
+    });
     return {
       ...d,
+      stays,
       first, last, leave, depStamp,
       reportStamp: d.report,
       returnStamp: last.to === HOME ? `${last.arrDate}T${last.arr}` : null,
@@ -178,7 +187,7 @@ export const hmToMin = (s) => { if (!s) return 0; const [h, m] = s.split(':').ma
 export const fmtDur = (min, { days = false } = {}) => {
   min = Math.round(min);
   if (days && min >= 1440) {
-    const d = Math.floor(min / 1440), h = Math.round((min % 1440) / 60);
+    const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60);
     return h ? `${d} gün ${h} sa` : `${d} gün`;
   }
   const h = Math.floor(min / 60), m = min % 60;

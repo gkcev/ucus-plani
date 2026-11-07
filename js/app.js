@@ -337,6 +337,7 @@ function renderTrips(r) {
         <span>Kalkış <b>${t.first.dep}</b></span>
         ${t.returnStamp ? `<span>Eve iniş <b>${t.returnStamp.slice(11)}</b> (${esc(fmtShort(t.returnStamp.slice(0, 10)))})</span>` : ''}
       </div>
+      ${t.stays.some((x) => !x.transit) ? `<div class="row stay">${t.stays.filter((x) => !x.transit).map((x) => `<span>📍 ${esc(city(x.station))} kalış: <b>${esc(fmtDur(x.min, { days: true }))}</b></span>`).join('')}</div>` : ''}
     </button>`).join('') : '<p class="footnote">Bu ay uçuş yok.</p>';
   $('#tripList')._trips = T;
 }
@@ -379,6 +380,12 @@ function tripHtml(t) {
     <div class="card"><h3>Özet (Türkiye saati)</h3>
       <ul class="timeline">${steps.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul>
     </div>
+    ${t.stays.length ? `<div class="card"><h3>Orada kalış</h3>${t.stays.map((x) => {
+      const inL = t.legs.find((l) => l.to === x.station), outL = t.legs[t.legs.indexOf(inL) + 1];
+      return `<div class="dest"><span class="name">${esc(city(x.station))}${x.transit ? '<small>aktarma</small>' : ''}</span>
+        <span class="val"><b>${esc(fmtDur(x.min, { days: true }))}</b>${x.min >= 1440 ? ` <small class="muted">(${fmtHM(x.min)} sa)</small>` : ''}</span>
+        <span class="muted" style="grid-column:1/-1;font-size:13px">İniş ${esc(fmtShort(inL.arrDate))} ${inL.arr} → kalkış ${esc(fmtShort(outL.depDate))} ${outL.dep} (yerel saat)</span></div>`;
+    }).join('')}</div>` : ''}
     <div class="card"><h3>Uçuşlar (yerel saat)</h3>${legs}</div>
     ${hotels ? `<div class="card"><h3>Konaklama</h3>${hotels}</div>` : ''}
     ${t.crew?.length ? `<div class="card"><h3>Kokpit ekibi</h3><div class="chips">${t.crew.map((c) => `<span class="chip">${esc(niceName(c.replace(/\s*\(.*\)$/, '')))} <small>${esc((c.match(/\((.*)\)$/) || [])[1] || '')}</small></span>`).join('')}</div></div>` : ''}
