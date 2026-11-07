@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 let viewKey = null;
 let view = store.get('view', 'cal');
 
@@ -307,6 +307,13 @@ function maybeAutoTraffic(t) {
   const ttl = toLeave < 4 * 3600000 ? 20 * 60000 : 6 * 3600000;
   if (age > ttl) refreshTraffic(t, { quiet: true });
 }
+// congestion level from traffic delay relative to free-flow time (colour + icon + word, never colour alone)
+function congestion(min, delay = 0) {
+  const ratio = delay / Math.max(1, min - delay);
+  if (ratio < 0.1) return { k: 'ok', icon: '●', label: 'akıcı' };
+  if (ratio < 0.3) return { k: 'mid', icon: '▲', label: 'yoğun' };
+  return { k: 'bad', icon: '■', label: 'çok yoğun' };
+}
 const hhmm = (iso) => new Date(Date.parse(iso) + 3 * 3600000).toISOString().slice(11, 16);
 
 function renderHero() {
@@ -364,9 +371,12 @@ function renderHero() {
         if (next.drive && meta?.src === 'traffic') {
           return `<div class="traffic-big">
             <span class="tb-icon" aria-hidden="true">🚦</span>
-            <div><small>Trafikli yol</small><b>${next.drive} dk</b></div>
+            <div><small>${meta.mode === 'planned' ? 'Ortalama yol' : 'Trafikli yol'}</small><b>${next.drive} dk</b></div>
             <span class="tb-meta">${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : 'Trafik normal<br>'}${meta.mode === 'planned' ? `${next.leave.slice(11)} çıkışı için tahmin` : 'şu anki trafik'} · ${hhmm(meta.at)}</span>
-            ${meta.mode === 'planned' && meta.nowMin ? `<div class="tb-now">Şu an çıksan: <b>${meta.nowMin} dk</b>${meta.nowDelay ? ` <span>(+${meta.nowDelay} dk yoğunluk)</span>` : ''}</div>` : ''}
+            ${meta.mode === 'planned' && meta.nowMin ? (() => {
+              const lv = congestion(meta.nowMin, meta.nowDelay);
+              return `<div class="tb-now">Şu an çıksan: <b class="cg-${lv.k}">${meta.nowMin} dk</b> <span class="cg-tag cg-${lv.k}">${lv.icon} ${lv.label}${meta.nowDelay ? ` · +${meta.nowDelay} dk` : ''}</span></div>`;
+            })() : ''}
           </div>
           <p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk − ${DRIVE_BUFFER_MIN} dk pay</p>`;
         }
@@ -430,7 +440,7 @@ function renderTrips(r) {
         ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b></span>` : ''}
         ${t.first.from === HOME ? `<span>İmza <b>${t.reportStamp.slice(11)}</b></span>` : ''}
         <span>Kalkış <b>${t.first.dep}</b></span>
-        ${t.returnStamp ? `<span>Eve iniş <b>${t.returnStamp.slice(11)}</b> (${esc(fmtShort(t.returnStamp.slice(0, 10)))})</span>` : ''}
+        ${t.returnStamp ? `<span>Eve iniş <b>${t.returnStamp.slice(11)}</b> <b class="ret-date">${esc(fmtShort(t.returnStamp.slice(0, 10)))}</b></span>` : ''}
       </div>
       ${t.stays.some((x) => !x.transit) ? `<div class="row stay">${t.stays.filter((x) => !x.transit).map((x) => `<span>📍 ${esc(city(x.station))} kalış: <b>${esc(fmtDur(x.min, { days: true }))}</b></span>`).join('')}</div>` : ''}
       ${t.first.from === HOME && !(t.returnStamp && istDate(t.returnStamp) < now) ? mapsLink() : ''}

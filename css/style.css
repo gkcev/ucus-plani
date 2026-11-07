@@ -315,3 +315,6 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .traffic-big .tb-now { grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.15); font-size: 15px; }
 .traffic-big .tb-now b { display: inline; font-size: 20px; }
 .traffic-big .tb-now span { font-size: 12.5px; opacity: .75; }
+.cg-ok { color: #4ade80; } .cg-mid { color: #fbbf24; } .cg-bad { color: #f87171; }
+.traffic-big .tb-now .cg-tag { font-size: 12.5px; opacity: 1; font-weight: 600; white-space: nowrap; }
+.trip .ret-date { font-size: 16px; }
