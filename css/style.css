@@ -325,3 +325,12 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .hero.landing { margin: 34px 0 14px; }
 .hero .land-date { margin: 2px 0 6px; font-size: 22px; font-weight: 700; }
 .sheet h2 { margin-top: 0; }
+
+/* stats scope: this month / all months */
+.seg { display: flex; gap: 4px; padding: 4px; margin: 0 0 12px; background: var(--track); border-radius: 12px; }
+.seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; padding: 8px 6px; border-radius: 9px; cursor: pointer; }
+.seg button.on { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.months.many { gap: 3px; }
+.months.many .col { min-width: 0; }
+.months.many .col .v, .months.many .col .m { font-size: 10.5px; }
+.mtable.compact td { white-space: nowrap; }

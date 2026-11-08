@@ -184,14 +184,19 @@ export async function parseRoster(pdfjs, data) {
         block.ev.push({ k: 'LIM', name: m[1], v: m[2], max: m[3] });
       }
       if (!right) continue;
-      const f = right.match(/^([A-Z]{2}\d{1,4}[A-Z]?|[A-Z]{2,6})\s+(?:([A-Z]{3})\/)?(\d{1,2}:\d{2})\s+(?:([A-Z]{3})\/)?(\d{1,2}:\d{2})\s*(.*)$/);
+      // "TK033 P IST/14:25 IAH/19:20" – P = positioning (travels as passenger, not in US);
+      // other markers (e.g. CATC = observer on board) are kept as obs
+      const f = right.match(/^([A-Z]{2}\d{1,4}[A-Z]?|[A-Z]{2,6})\s+(?:([A-Z]{1,4})\s+(?=[A-Z]{3}\/|\d))?(?:([A-Z]{3})\/)?(\d{1,2}:\d{2})\s+(?:([A-Z]{3})\/)?(\d{1,2}:\d{2})\s*(.*)$/);
       if (f) {
+        const from = f[3] || null, to = f[5] || null;
+        // SR1/RC3 IST->IST: simulator/training sessions, not flights
+        const isFlight = /^[A-Z]{2}\d/.test(f[1]) && !(from && from === to);
         lastFlight = {
-          k: /^[A-Z]{2}\d/.test(f[1]) ? 'FLT' : 'CODE', code: f[1], from: f[2] || null, dep: hm(f[3]),
-          to: f[4] || null, arr: hm(f[5]),
+          k: isFlight ? 'FLT' : 'CODE', code: f[1], from, dep: hm(f[4]),
+          to, arr: hm(f[6]), pos: f[2] === 'P', obs: !!f[2] && f[2] !== 'P',
         };
         block.ev.push(lastFlight);
-        if (f[6]) block.crew.push(f[6]);
+        if (f[7]) block.crew.push(f[7]);
       } else if (kokHdr && l.items.filter((i) => i.x >= colX).every((i) => i.x >= kokHdr.x - 40)) {
         block.crew.push(right); // crew names wrapped onto their own line
       }
@@ -240,7 +245,14 @@ export async function parseRoster(pdfjs, data) {
       if (i > 0) {
         const cand = stamp(nextAt(cursor, f.dep), f.dep);
         const curEnd = d.periods[pIdx]?.end;
-        if (curEnd && cand > curEnd && d.periods[pIdx + 1]) {
+        const nxt = d.periods[pIdx + 1];
+        // leg is the first of the next duty period when that period's sign-in is
+        // 45 min – 2.5 h before this departure
+        const nxtGap = nxt ? (toMin(f.dep) - toMin(nxt.start.slice(11)) + 1440) % 1440 : -1;
+        if (nxt && nxtGap >= 45 && nxtGap <= 150) {
+          pIdx += 1;
+          cursor = nxt.start;
+        } else if (curEnd && cand > curEnd && nxt) {
           pIdx += 1;
           cursor = d.periods[pIdx].start;
         }
@@ -253,6 +265,7 @@ export async function parseRoster(pdfjs, data) {
         flight: f.code, from: f.from, to: f.to,
         depDate, dep: f.dep, arrDate, arr: f.arr,
         dutyIndex: pIdx,
+        ...(f.pos ? { pos: true } : {}),
       };
     });
     delete d.items;

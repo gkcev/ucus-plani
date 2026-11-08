@@ -2,7 +2,7 @@ import { parseRoster } from './parser.js';
 import { city } from './stations.js';
 import { driveTime, currentPosition } from './traffic.js';
 import {
-  buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, CODE_INFO, HOME,
+  buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
   monthStats, fmtDur, fmtHM, shiftStamp, SIGNIN_BUFFER_MIN, DRIVE_BUFFER_MIN,
 } from './model.js';
 
@@ -16,9 +16,10 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 let viewKey = null;
 let view = store.get('view', 'cal');
+let statScope = store.get('statScope', 'month');
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -45,15 +46,28 @@ async function loadPdf() {
   return pdfjs;
 }
 
-async function importFile(file) {
-  if (!file) return;
-  const prev = $('#app').innerHTML;
-  showLoading('PDF okunuyor…');
+async function importFiles(files) {
+  files = [...files].filter(Boolean);
+  if (!files.length) return;
+  showLoading(files.length > 1 ? `${files.length} PDF okunuyor…` : 'PDF okunuyor…');
+  const ok = [], bad = [];
   try {
     const lib = await loadPdf();
-    const roster = await parseRoster(lib, new Uint8Array(await file.arrayBuffer()));
-    saveRoster(roster);
-    toast(`${monthName(roster.period.key)} programı eklendi`);
+    for (const file of files) {
+      try {
+        const roster = await parseRoster(lib, new Uint8Array(await file.arrayBuffer()));
+        saveRoster(roster, false);
+        ok.push(roster.period.key);
+      } catch (e) {
+        console.error(e);
+        bad.push(files.length > 1 ? `${file.name}: ${e.message || 'okunamadı'}` : (e.message || 'PDF okunamadı'));
+      }
+    }
+    if (ok.length) {
+      store.set('rosters', rosters);
+      viewKey = ok.length === 1 ? ok[0] : (rosters[new Date().toISOString().slice(0, 7)] ? new Date().toISOString().slice(0, 7) : ok.sort().pop());
+    }
+    toast([ok.length === 1 ? `${monthName(ok[0])} programı eklendi` : ok.length ? `${ok.length} ay eklendi` : '', ...bad].filter(Boolean).join(' · '));
   } catch (e) {
     console.error(e);
     toast(e.message || 'PDF okunamadı');
@@ -63,9 +77,9 @@ async function importFile(file) {
   }
 }
 
-function saveRoster(roster) {
+function saveRoster(roster, persist = true) {
   rosters[roster.period.key] = roster;
-  store.set('rosters', rosters);
+  if (persist) store.set('rosters', rosters);
   viewKey = roster.period.key;
 }
 
@@ -80,7 +94,7 @@ function hideLoading() { $('#loading')?.remove(); }
 
 document.addEventListener('change', (e) => {
   if (e.target.matches('.file-input')) {
-    importFile(e.target.files[0]);
+    importFiles(e.target.files);
     e.target.value = '';
     closeSheet();
   }
@@ -98,14 +112,15 @@ async function makeShareLink(roster) {
   const base = location.href.split('#')[0];
   return `${base}#p=${b64url(packed)}`;
 }
-async function readShareHash() {
-  const m = location.hash.match(/^#p=([\w-]+)/);
+async function readShareHash(src = location.hash) {
+  const m = String(src).match(/#p=([\w-]+)/);
   if (!m) return null;
   try {
     const raw = await pipe(fromB64url(m[1]), new DecompressionStream('deflate-raw'));
-    const roster = JSON.parse(new TextDecoder().decode(raw));
-    if (!roster?.period?.key || !Array.isArray(roster.duties)) throw new Error('bad');
-    return roster;
+    const data = JSON.parse(new TextDecoder().decode(raw));
+    const list = Array.isArray(data) ? data : [data];
+    if (!list.length || list.some((r) => !r?.period?.key || !Array.isArray(r.duties))) throw new Error('bad');
+    return list;
   } catch {
     toast('Paylaşım linki okunamadı');
     return null;
@@ -159,7 +174,13 @@ const mapsLink = (cls = 'maps-btn') => `<a class="${cls}" href="${MAPS_URL}" tar
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const SHORT_MONTH = new Intl.DateTimeFormat('tr-TR', { month: 'short' });
 
+const scopeBar = (n) => (n > 1 ? `<div class="seg" role="tablist">
+  <button role="tab" data-scope="month" class="${statScope === 'month' ? 'on' : ''}" aria-selected="${statScope === 'month'}">Bu ay</button>
+  <button role="tab" data-scope="all" class="${statScope === 'all' ? 'on' : ''}" aria-selected="${statScope === 'all'}">Tüm aylar (${n})</button>
+</div>` : '');
+
 function renderStats(r) {
+  if (statScope === 'all' && keys().length > 1) return renderAllStats();
   const s = monthStats(r, settings);
   const homeDays = s.dayGroups.filter((g) => g.key !== 'duty').reduce((a, g) => a + g.count, 0);
   const dutyDays = s.dayGroups.find((g) => g.key === 'duty').count;
@@ -168,9 +189,9 @@ function renderStats(r) {
   const all = keys().map((k) => monthStats(rosters[k], settings));
   const maxFlight = Math.max(1, ...all.map((m) => m.flightMin));
 
-  $('#viewStats').innerHTML = `
+  $('#viewStats').innerHTML = `${scopeBar(keys().length)}
     ${(r.version || 1) < 2 ? `<div class="banner"><span>Bu ay eski sürümle yüklendi; saat bilgileri eksik olabilir. Aynı PDF'i tekrar yükle.</span>
-      <label class="btn">PDF seç<input type="file" accept="application/pdf,.pdf" class="file-input" hidden></label></div>` : ''}
+      <label class="btn">PDF seç<input type="file" accept="application/pdf,.pdf" class="file-input" multiple hidden></label></div>` : ''}
     <div class="kpis">
       <div class="kpi"><small>Uçuş saati</small><b>${fmtHM(s.flightMin)}</b><span>${s.legCount} uçuş · ${s.tripCount} sefer</span></div>
       <div class="kpi"><small>Görev saati</small><b>${fmtHM(s.dutyMin)}</b><span>nöbet dahil</span></div>
@@ -250,9 +271,87 @@ function renderStats(r) {
     </div>`;
 }
 
+const shortMonth = (key) => `${SHORT_MONTH.format(new Date(key + '-15T12:00:00Z'))} ${key.slice(2, 4)}`;
+const dayNum = (min) => `${(min / 1440).toFixed(1).replace('.', ',')} gün`;
+
+function renderAllStats() {
+  const y = yearStats(keys().map((k) => rosters[k]), settings);
+  const stay = y.destinations.filter((d) => d.visits);
+  const pass = y.destinations.filter((d) => !d.visits);
+  const maxV = Math.max(1, ...stay.map((d) => d.visits));
+  const maxFlight = Math.max(1, ...y.months.map((m) => m.flightMin));
+  const range = `${monthName(y.from)} – ${monthName(y.to)}`;
+  const avg = Math.round(y.flightMin / y.months.length);
+  $('#viewStats').innerHTML = `${scopeBar(y.months.length)}
+    <p class="muted" style="margin:0 0 10px">${esc(range)} · ${y.months.length} ay</p>
+    <div class="kpis">
+      <div class="kpi"><small>Uçuş saati</small><b>${fmtHM(y.flightMin)}</b><span>ayda ortalama ${fmtHM(avg)}</span></div>
+      <div class="kpi"><small>Sefer</small><b>${y.tripCount}</b><span>${y.legCount} uçuş${y.posCount ? ` + ${y.posCount} yolcu olarak` : ''}</span></div>
+      <div class="kpi"><small>Yurt dışında</small><b>${esc(fmtDur(y.abroadMin, { days: true }))}</b><span>zamanın %${pct(y.abroadMin, y.monthMin)}'i</span></div>
+      <div class="kpi"><small>Evden uzak gece</small><b>${y.nights}</b><span>${y.months.length} ayda</span></div>
+    </div>
+
+    <div class="card">
+      <h3>En çok gittiği şehirler</h3>
+      ${stay.map((d) => `
+        <div class="dest">
+          <span class="name">${esc(city(d.code))}<small>${esc(d.code)}</small></span>
+          <span class="val"><b>${d.visits} kez</b> · ${esc(fmtDur(d.layoverMin, { days: true }))} otel</span>
+          <span class="bar"><i style="width:${pct(d.visits, maxV)}%"></i></span>
+        </div>`).join('') || '<p class="muted">Konaklamalı uçuş yok.</p>'}
+      ${pass.length ? `<p class="footnote" style="margin:12px 0 0">Konaklamadan uğradığı yerler: ${pass.map((d) => `<b>${esc(city(d.code))}</b>${d.transit > 1 ? ` (${d.transit})` : ''}`).join(', ')}</p>` : ''}
+    </div>
+
+    <div class="card">
+      <h3>Öne çıkanlar</h3>
+      <dl class="kv">
+        ${y.busiest ? `<dt>En yoğun ay</dt><dd><b>${esc(monthName(y.busiest.key))}</b> <small class="muted">${fmtHM(y.busiest.flightMin)} uçuş</small></dd>` : ''}
+        ${y.quietest && y.quietest !== y.busiest ? `<dt>En sakin ay</dt><dd><b>${esc(monthName(y.quietest.key))}</b> <small class="muted">${fmtHM(y.quietest.flightMin)} uçuş</small></dd>` : ''}
+        ${y.longest ? `<dt>En uzun sefer</dt><dd><b>${esc(y.longest.title)}</b> <small class="muted">${esc(fmtDur(y.longest.min, { days: true }))} · ${esc(fmtShort(y.longest.depStamp.slice(0, 10)))}</small></dd>` : ''}
+        <dt>Gece kalkışı</dt><dd><b>${y.nightDeps}</b> <small class="muted">İstanbul'dan 00:00–06:00 arası</small></dd>
+        <dt>Hafta sonları</dt><dd><b>${y.weekendHome} / ${y.weekendDays}</b> <small class="muted">gün evde (%${pct(y.weekendHome, y.weekendDays)})</small></dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h3>Dinlenme, izin, nöbet</h3>
+      <dl class="kv">
+        <dt>İzin günü</dt><dd><b>${y.offDays} gün</b></dd>
+        <dt>Uçuş sonrası dinlenme</dt><dd><b>${esc(fmtDur(y.postRestMin, { days: true }))}</b></dd>
+        <dt>Yurt dışında otelde</dt><dd><b>${esc(fmtDur(y.layoverMin, { days: true }))}</b></dd>
+        <dt>Nöbet / CFR</dt><dd><b>${y.standbyCount} kez</b></dd>
+        ${y.groundCount ? `<dt>Eğitim / simülatör</dt><dd><b>${y.groundCount} gün</b>${y.simCount ? ` <small class="muted">(${y.simCount} simülatör)</small>` : ''}</dd>` : ''}
+      </dl>
+    </div>
+
+    ${y.crew.length && y.crew[0].n >= 3 ? `<div class="card">
+      <h3>En çok birlikte uçtuğu</h3>
+      <dl class="kv">${y.crew.map((c) => `<dt>${esc(niceName(c.name))}</dt><dd><b>${c.n} sefer</b></dd>`).join('')}</dl>
+    </div>` : ''}
+
+    <div class="card">
+      <h3>Aylara göre uçuş saati</h3>
+      <div class="months${y.months.length > 6 ? ' many' : ''}">${y.months.map((m) => `
+        <button class="col" data-month="${m.key}" title="${esc(monthName(m.key))}: ${fmtHM(m.flightMin)}">
+          <span class="v">${y.months.length > 6 ? Math.round(m.flightMin / 60) : fmtHM(m.flightMin)}</span>
+          <i style="height:${Math.max(2, pct(m.flightMin, maxFlight))}%"></i>
+          <span class="m">${esc(SHORT_MONTH.format(new Date(m.key + '-15T12:00:00Z')))}</span>
+        </button>`).join('')}</div>
+      ${y.months.length > 6 ? '<p class="footnote" style="margin:4px 0 0">Sütun üstündeki sayılar saat.</p>' : ''}
+      <table class="mtable compact">
+        <thead><tr><th>Ay</th><th>Uçuş</th><th>Yurt dışı</th><th>Gece</th><th>İzin</th></tr></thead>
+        <tbody>${y.months.map((m) => `<tr><td>${esc(shortMonth(m.key))}</td><td>${fmtHM(m.flightMin)}</td><td>${dayNum(m.abroadMin)}</td><td>${m.nights}</td><td>${m.dayGroups.find((g) => g.key === 'off').count} gün</td></tr>`).join('')}
+        <tr><td><b>Toplam</b></td><td><b>${fmtHM(y.flightMin)}</b></td><td><b>${dayNum(y.abroadMin)}</b></td><td><b>${y.nights}</b></td><td><b>${y.offDays} gün</b></td></tr></tbody>
+      </table>
+      <p class="footnote" style="margin:8px 0 0">Uçuş saati, pilot olarak uçtuğu süredir (PDF'teki US). Yolcu olarak gidilen (P) uçuşlar ve simülatör dahil değildir.</p>
+    </div>`;
+}
+
 $('#viewStats').addEventListener('click', (e) => {
+  const sc = e.target.closest('[data-scope]');
+  if (sc) { statScope = sc.dataset.scope; store.set('statScope', statScope); render(); return; }
   const c = e.target.closest('[data-month]');
-  if (c) { viewKey = c.dataset.month; render(); }
+  if (c) { viewKey = c.dataset.month; statScope = 'month'; store.set('statScope', statScope); render(); }
 });
 
 function allTrips() {
@@ -530,13 +629,13 @@ function openDay(d) {
     return openSheet(landing + tripHtml(t));
   }
   let title = 'Evde 🏠', body = 'Bu gün için bir görev yok.';
-  if (d.kind === 'off') { title = 'İzinli 🏠'; body = CODE_INFO[d.duty?.type]?.long || 'Boş gün'; }
+  if (d.kind === 'off') { title = 'İzinli 🏠'; body = codeInfo(d.duty?.type).long || 'Boş gün'; }
   if (d.kind === 'rest') { title = 'Dinlenme 🏠'; body = `Uçuş sonrası yasal dinlenme. Bitiş: ${fmtShort(d.restOf.restUntil.slice(0, 10))} ${d.restOf.restUntil.slice(11)}`; }
   if (d.kind === 'prev') { title = 'Görevde'; body = 'Önceki aydan devam eden görev. Ayrıntısı önceki ayın programında.'; }
   if (d.kind === 'standby') {
-    const ci = CODE_INFO[d.duty.type] || {};
-    title = d.duty.type === 'CFR' ? 'Görev bekleme' : 'Ev nöbeti';
-    body = `${ci.long || ''}<br><b style="font-size:22px">${d.duty.code?.dep || d.duty.start.slice(11)} – ${d.duty.code?.arr || d.duty.end.slice(11)}</b><br><small>Bu saatlerde aranıp uçuşa çağrılabilir.</small>`;
+    const ci = codeInfo(d.duty.type);
+    title = ci.ground ? ci.label : d.duty.type === 'CFR' ? 'Görev bekleme' : 'Ev nöbeti';
+    body = `${esc(ci.long || '')}<br><b style="font-size:22px">${d.duty.code?.dep || d.duty.start.slice(11)} – ${d.duty.code?.arr || d.duty.end.slice(11)}</b>${ci.ground ? '' : '<br><small>Bu saatlerde aranıp uçuşa çağrılabilir.</small>'}`;
   }
   openSheet(`<h2>${title}</h2><p class="muted">${esc(fmtDay(d.date))}</p><div class="card">${body}</div>`);
 }
@@ -586,8 +685,10 @@ function openSettings() {
     </div>
     <div class="card stack">
       <h3>Program</h3>
-      <label class="btn primary block">Yeni ay PDF'i yükle<input type="file" accept="application/pdf,.pdf" class="file-input" hidden></label>
-      ${ks.length ? `<button class="btn block" id="shareBtn">Eşinle paylaş (link)</button>
+      <label class="btn primary block">PDF yükle (birden fazla seçebilirsin)<input type="file" accept="application/pdf,.pdf" class="file-input" multiple hidden></label>
+      ${ks.length ? `<button class="btn block" id="shareBtn">Bu ayı paylaş (link)</button>
+      ${ks.length > 1 ? `<button class="btn block" id="shareAllBtn">Tüm ayları paylaş (${ks.length} ay, tek link)</button>` : ''}
+      <button class="btn block" id="pasteLinkBtn">📩 Gelen linki yapıştır</button>
       <button class="btn block" id="icsBtn">Telefon takvimine ekle (.ics)</button>` : ''}
     </div>
     ${ks.length ? `<div class="card"><h3>Yüklü aylar</h3>${ks.map((k) => `<div class="month-row"><span>${esc(monthName(k))}</span><button class="link-btn" data-del="${k}">Sil</button></div>`).join('')}</div>` : ''}
@@ -649,9 +750,11 @@ $('#sheet').addEventListener('click', async (e) => {
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     }
   }
-  if (e.target.id === 'shareBtn') {
-    const link = await makeShareLink(rosters[viewKey]);
-    const text = `${monthName(viewKey)} uçuş planı`;
+  if (e.target.id === 'shareBtn' || e.target.id === 'shareAllBtn') {
+    const all = e.target.id === 'shareAllBtn';
+    const link = await makeShareLink(all ? keys().map((k) => rosters[k]) : rosters[viewKey]);
+    const ks = keys();
+    const text = all ? `Uçuş planı (${monthName(ks[0])} – ${monthName(ks[ks.length - 1])})` : `${monthName(viewKey)} uçuş planı`;
     if (navigator.share) {
       try { await navigator.share({ title: text, text, url: link }); } catch { /* cancelled */ }
     } else {
@@ -661,18 +764,39 @@ $('#sheet').addEventListener('click', async (e) => {
   }
 });
 
+function applyShared(shared) {
+  shared = [...shared].sort((a, b) => (a.period.key < b.period.key ? -1 : 1));
+  const fresh = shared.filter((r) => !rosters[r.period.key]).length;
+  for (const r of shared) saveRoster(r, false);
+  store.set('rosters', rosters);
+  if (shared.length > 1) viewKey = null;
+  render();
+  const b = $('#shareBanner');
+  b.hidden = false;
+  b.innerHTML = shared.length === 1
+    ? `<span>📩 ${esc(monthName(shared[0].period.key))} programı ${fresh ? 'eklendi' : 'güncellendi'}.</span>`
+    : `<span>📩 ${shared.length} aylık program eklendi (${esc(monthName(shared[0].period.key))} – ${esc(monthName(shared[shared.length - 1].period.key))}).</span>`;
+  setTimeout(() => { b.hidden = true; }, 6000);
+}
+// iPhone opens shared links in Safari, not in the home-screen app: let the link be pasted here too
+async function pasteLink(text) {
+  const shared = await readShareHash(text || '');
+  if (shared) { closeSheet(); applyShared(shared); return true; }
+  if (text !== null) toast('Bu bir paylaşım linki değil');
+  return false;
+}
+document.addEventListener('click', (e) => {
+  if (e.target.id !== 'pasteLinkBtn') return;
+  const text = prompt('Gelen paylaşım linkini buraya yapıştır:');
+  if (text !== null) pasteLink(text);
+});
+
 // ---------- boot ----------
 async function boot() {
   const shared = await readShareHash();
   if (shared) {
     history.replaceState(null, '', location.pathname + location.search);
-    const exists = rosters[shared.period.key];
-    const b = $('#shareBanner');
-    saveRoster(shared);
-    render();
-    b.hidden = false;
-    b.innerHTML = `<span>📩 ${esc(monthName(shared.period.key))} programı ${exists ? 'güncellendi' : 'eklendi'}.</span>`;
-    setTimeout(() => { b.hidden = true; }, 6000);
+    applyShared(shared);
   } else {
     render();
   }

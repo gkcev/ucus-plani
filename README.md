@@ -5,7 +5,9 @@ okunur bir takvime ve istatistiklere çeviren PWA.
 
 - Takvim: hangi gün uçuşta / evde, evden çıkış saati (kalkıştan X saat önce), kalkış, dönüş
 - İstatistik: uçuş ve görev saati, yurt dışı / Türkiye süresi, dinlenme, gidilen şehirler, yasal limitler
-- Eşle paylaşım linki, telefon takvimine (.ics) aktarma
+- Birden fazla PDF aynı anda yüklenir; tek ay ya da tüm aylar tek linkle eşle paylaşılır
+- Tüm aylar istatistiği: en çok gidilen şehirler, en yoğun ay, hafta sonları evde mi
+- Telefon takvimine (.ics) aktarma
 - Çevrimdışı çalışır
 
 **Gizlilik:** PDF tarayıcıda (pdf.js) okunur, hiçbir sunucuya gönderilmez. Veriler yalnızca cihazın

@@ -20,7 +20,17 @@ export const CODE_INFO = {
   SBY: { label: 'Nöbet', long: 'Nöbet', kind: 'standby' },
   CFR: { label: 'CFR', long: 'Call for Roster: görev çıkabilir', kind: 'standby' },
   GG: { label: 'Görev', long: 'Önceki aydan devam eden görev', kind: 'prev' },
+  IBE: { label: 'İzin', long: 'Boş gün', kind: 'off' },
+  III: { label: 'İzin', long: 'Boş gün', kind: 'off' },
+  MUA: { label: 'Muayene', long: 'Sağlık muayenesi', kind: 'standby', ground: true },
 };
+/** Label/colour for a day code; simulator (SR1…) and training (RC1…) get their own words. */
+export function codeInfo(type = '') {
+  if (CODE_INFO[type]) return CODE_INFO[type];
+  if (/^SR\d/.test(type)) return { label: 'Simülatör', long: `Simülatör eğitimi (${type})`, kind: 'standby', ground: true };
+  if (/^RC\d/.test(type)) return { label: 'Eğitim', long: `Eğitim (${type})`, kind: 'standby', ground: true };
+  return { label: type, long: `Yer görevi / eğitim (${type})`, kind: 'standby', ground: true };
+}
 
 export const CARGO_LATER_MIN = 30;
 export const SIGNIN_BUFFER_MIN = 40; // arrive this long before sign-in
@@ -114,7 +124,7 @@ export function buildDays(roster, settings) {
         info.sub = trip.returnStamp ? `↩ ${WEEKDAY.format(new Date(trip.returnStamp.slice(0, 10) + 'T12:00:00Z'))} ${trip.returnStamp.slice(11)}` : (flying ? 'Uçuş var' : '');
       }
     } else if (other) {
-      const ci = CODE_INFO[other.type] || { label: other.type, long: other.type, kind: 'standby' };
+      const ci = codeInfo(other.type);
       info.kind = ci.kind;
       info.label = ci.label;
       info.duty = other;
@@ -293,5 +303,90 @@ export function monthStats(roster, settings) {
       { label: 'Son 12 ay uçuş', ...yearly('B12M') },
       { label: 'Bu yıl görev', ...yearly('D1Y') },
     ].filter((l) => l.max),
+  };
+}
+
+/** Statistics over every loaded month (each trip counted once, in the month it starts). */
+export function yearStats(rosters, settings) {
+  const list = [...rosters].sort((a, b) => (a.period.key < b.period.key ? -1 : 1));
+  const months = list.map((r) => monthStats(r, settings));
+  const sum = (f) => months.reduce((a, m) => a + f(m), 0);
+  const seen = new Set();
+  const T = [];
+  for (const r of list) {
+    for (const t of trips(r, settings)) {
+      if (seen.has(t.key)) continue;
+      seen.add(t.key);
+      T.push({ ...t, me: r.person?.name || '' });
+    }
+  }
+  // destinations: how many trips stayed there + total hotel time
+  const dest = new Map();
+  for (const t of T) {
+    const here = new Set();
+    for (const y of t.layovers) {
+      const e = dest.get(y.station) || { code: y.station, visits: 0, layoverMin: 0, transit: 0 };
+      if (!here.has(y.station)) e.visits++;
+      here.add(y.station);
+      e.layoverMin += hmToMin(y.rest);
+      dest.set(y.station, e);
+    }
+    for (const l of t.legs) {
+      if (l.to === HOME || here.has(l.to)) continue;
+      here.add(l.to);
+      const e = dest.get(l.to) || { code: l.to, visits: 0, layoverMin: 0, transit: 0 };
+      e.transit++;
+      dest.set(l.to, e);
+    }
+  }
+  const legs = T.flatMap((t) => t.legs);
+  const flown = legs.filter((l) => !l.pos);
+  // crew he flew with most (his own name left out)
+  const crew = new Map();
+  for (const t of T) {
+    const me = t.me.toUpperCase();
+    for (const c of new Set(t.crew || [])) {
+      const name = c.replace(/\s*\(\w+\)$/, '').trim();
+      if (!name || name.toUpperCase() === me) continue;
+      crew.set(name, (crew.get(name) || 0) + 1);
+    }
+  }
+  // weekends at home
+  let weekendDays = 0, weekendHome = 0;
+  for (const r of list) {
+    for (const d of buildDays(r, settings)) {
+      const wd = new Date(d.date + 'T12:00:00Z').getUTCDay();
+      if (wd !== 0 && wd !== 6) continue;
+      weekendDays++;
+      if (!['depart', 'away', 'return', 'prev'].includes(d.kind)) weekendHome++;
+    }
+  }
+  const tripLen = (t) => (t.returnStamp ? istDate(t.returnStamp) - istDate(t.depStamp) : 0) / 60000;
+  const longest = T.reduce((a, t) => (tripLen(t) > tripLen(a || t) ? t : a || t), null);
+  const ground = list.flatMap((r) => r.duties).filter((d) => d.type !== 'trip' && codeInfo(d.type).ground);
+  const byFlight = [...months].sort((a, b) => b.flightMin - a.flightMin);
+  return {
+    months,
+    from: list[0]?.period.key, to: list[list.length - 1]?.period.key,
+    flightMin: sum((m) => m.flightMin),
+    dutyMin: sum((m) => m.dutyMin),
+    abroadMin: sum((m) => m.abroadMin),
+    monthMin: sum((m) => m.monthMin),
+    layoverMin: sum((m) => m.layoverMin),
+    postRestMin: sum((m) => m.postRestMin),
+    nights: sum((m) => m.nights),
+    offDays: sum((m) => m.dayGroups.find((g) => g.key === 'off').count),
+    standbyCount: sum((m) => m.standbyCount),
+    tripCount: T.length,
+    legCount: flown.length,
+    posCount: legs.length - flown.length,
+    nightDeps: flown.filter((l) => l.from === HOME && l.dep < '06:00').length,
+    groundCount: ground.length,
+    simCount: ground.filter((d) => /^SR\d/.test(d.type)).length,
+    destinations: [...dest.values()].sort((a, b) => b.visits - a.visits || b.layoverMin - a.layoverMin || b.transit - a.transit),
+    crew: [...crew].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n).slice(0, 5),
+    weekendDays, weekendHome,
+    longest: longest && tripLen(longest) ? { title: longest.title, min: tripLen(longest), depStamp: longest.depStamp } : null,
+    busiest: byFlight[0], quietest: byFlight[byFlight.length - 1],
   };
 }
