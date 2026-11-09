@@ -3,7 +3,7 @@ import { city } from './stations.js';
 import { driveTime, currentPosition } from './traffic.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
-  monthStats, fmtDur, fmtHM, shiftStamp, SIGNIN_BUFFER_MIN, DRIVE_BUFFER_MIN,
+  monthStats, fmtDur, fmtHM, DRIVE_BUFFER_MIN,
 } from './model.js';
 
 // ---------- storage ----------
@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -372,6 +372,12 @@ function setDrive(key, minutes, meta = { src: 'manual' }, quiet = false) {
 // ---------- live traffic (Google Maps Routes API) ----------
 delete settings.tomtomKey;
 const trafficReady = () => !!(settings.googleKey && settings.home);
+for (const [k, m] of Object.entries(settings.driveMeta || {})) {
+  if (m?.mode === 'planned' && m.nowMin) {
+    settings.drive[k] = m.nowMin;
+    settings.driveMeta[k] = { src: 'traffic', delayMin: m.nowDelay || 0, km: m.km, mode: 'now', at: m.at };
+  }
+}
 let trafficBusy = false;
 function countCall(n = 1) {
   const m = new Date().toISOString().slice(0, 7);
@@ -400,12 +406,10 @@ async function refreshTraffic(t, { quiet = false } = {}) {
   trafficBusy = true;
   if (!quiet) setTrafficBtn('busy');
   try {
-    const arriveBy = shiftStamp(t.reportStamp, -SIGNIN_BUFFER_MIN); // be at the airport 40 min before sign-in
-    const r = await driveTime({ key: settings.googleKey, home: settings.home, arriveBy, guessMin: t.drive || 60 });
-    // plus "if you left right now" (skip the extra call when the plan already used live traffic)
-    const nowR = r.mode === 'now' ? r : await driveTime({ key: settings.googleKey, home: settings.home, arriveBy: null });
-    countCall(r.calls + (nowR === r ? 0 : nowR.calls));
-    setDrive(t.key, r.minutes, { src: 'traffic', delayMin: r.delayMin, km: r.km, mode: r.mode, nowMin: nowR.minutes, nowDelay: nowR.delayMin }, true);
+    // live traffic only: "if you left right now"
+    const r = await driveTime({ key: settings.googleKey, home: settings.home, arriveBy: null });
+    countCall(r.calls);
+    setDrive(t.key, r.minutes, { src: 'traffic', delayMin: r.delayMin, km: r.km, mode: 'now' }, true);
     if (!quiet) setTrafficBtn('done');
   } catch (err) {
     if (!quiet) setTrafficBtn('error', err.message);
@@ -414,14 +418,14 @@ async function refreshTraffic(t, { quiet = false } = {}) {
     trafficBusy = false;
   }
 }
-// Automatic refresh for the next flight: only within 48h of leaving; every 20 min in the last 4h, else every 6h.
+// Automatic refresh for the next flight: only within 48h of leaving; every 15 min in the last 4h, else every 6h.
 function maybeAutoTraffic(t) {
   if (!trafficReady() || !t?.leave || t.first.from !== HOME) return;
   const meta = settings.driveMeta?.[t.key];
   const toLeave = istDate(t.leave) - Date.now();
   if (toLeave > 48 * 3600000 || toLeave < -3600000) return;
   const age = meta?.at ? Date.now() - Date.parse(meta.at) : Infinity;
-  const ttl = toLeave < 4 * 3600000 ? 20 * 60000 : 6 * 3600000;
+  const ttl = toLeave < 4 * 3600000 ? 15 * 60000 : 6 * 3600000;
   if (age > ttl) refreshTraffic(t, { quiet: true });
 }
 // congestion level from traffic delay relative to free-flow time (colour + icon + word, never colour alone)
@@ -486,14 +490,11 @@ function renderHero() {
       ${(() => {
         const meta = settings.driveMeta?.[next.key];
         if (next.drive && meta?.src === 'traffic') {
+          const lv = congestion(next.drive, meta.delayMin);
           return `<div class="traffic-big">
             <span class="tb-icon" aria-hidden="true">🚦</span>
-            <div><small>${meta.mode === 'planned' ? 'Ortalama yol' : 'Trafikli yol'}</small><b>${next.drive} dk</b></div>
-            <span class="tb-meta">${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : 'Trafik normal<br>'}${meta.mode === 'planned' ? `${next.leave.slice(11)} çıkışı için tahmin` : 'şu anki trafik'} · ${hhmm(meta.at)}</span>
-            ${meta.mode === 'planned' && meta.nowMin ? (() => {
-              const lv = congestion(meta.nowMin, meta.nowDelay);
-              return `<div class="tb-now">Şu an çıksan: <b class="cg-${lv.k}">${meta.nowMin} dk</b> <span class="cg-tag cg-${lv.k}">${lv.icon} ${lv.label}${meta.nowDelay ? ` · +${meta.nowDelay} dk` : ''}</span></div>`;
-            })() : ''}
+            <div><small>Şu anki trafik</small><b class="cg-${lv.k}">${next.drive} dk</b></div>
+            <span class="tb-meta"><span class="cg-tag cg-${lv.k}">${lv.icon} ${lv.label}</span><br>${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : ''}güncelleme ${hhmm(meta.at)}</span>
           </div>
           <p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk − ${DRIVE_BUFFER_MIN} dk pay</p>`;
         }
