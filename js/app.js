@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -423,7 +423,8 @@ function maybeAutoTraffic(t) {
   if (!trafficReady() || !t?.leave || t.first.from !== HOME) return;
   const meta = settings.driveMeta?.[t.key];
   const toLeave = istDate(t.leave) - Date.now();
-  if (toLeave > 48 * 3600000 || toLeave < -3600000) return;
+  // keep refreshing until sign-in (leave time itself moves with traffic)
+  if (toLeave > 48 * 3600000 || (t.reportStamp && istDate(t.reportStamp) < Date.now())) return;
   const age = meta?.at ? Date.now() - Date.parse(meta.at) : Infinity;
   const ttl = toLeave < 4 * 3600000 ? 15 * 60000 : 6 * 3600000;
   if (age > ttl) refreshTraffic(t, { quiet: true });
@@ -442,7 +443,8 @@ function renderHero() {
   const T = allTrips();
   const el = $('#hero');
   el.className = 'hero';
-  const current = T.find((t) => istDate(t.leave || t.depStamp) <= now && t.returnStamp && now < istDate(t.returnStamp));
+  // 'on duty' starts at departure; until then keep the pre-flight card (leave time + live traffic)
+  const current = T.find((t) => istDate(t.depStamp) <= now && t.returnStamp && now < istDate(t.returnStamp));
   if (current) {
     const arrived = current.legs.filter((l) => l.arrDate <= now.toISOString().slice(0, 10)).pop();
     const loc = city(arrived?.to || current.main);
@@ -459,7 +461,7 @@ function renderHero() {
     el.onclick = () => openTrip(current);
     return;
   }
-  const next = T.find((t) => t.leave && istDate(t.leave) > now) || T.find((t) => istDate(t.depStamp) > now);
+  const next = T.find((t) => istDate(t.depStamp) > now);
   if (!next) {
     el.className = 'hero home';
     el.innerHTML = `<p class="eyebrow">Durum</p><h2>Evde 🏠</h2><p class="when">Yüklü programda yaklaşan uçuş yok. Yeni ayın PDF'i gelince yükleyebilirsin.</p>`;
@@ -476,7 +478,7 @@ function renderHero() {
       <div class="hero-cell"><small>Kalkış</small><b>${next.first.dep}</b></div>
       <div class="hero-cell"><small>Eve iniş${next.returnStamp ? ' · ' + esc(fmtShort(next.returnStamp.slice(0, 10)).replace(/ \S+$/, '')) : ''}</small><b>${next.returnStamp ? next.returnStamp.slice(11) : '–'}</b></div>
     </div>
-    <p class="countdown">Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>
+    <p class="countdown">${leaveAt > now ? `Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.` : `Evden çıkış saati geçti (${esc(relative(leaveAt, now))}).${next.reportStamp && istDate(next.reportStamp) > now ? ` İmzaya ${esc(relative(istDate(next.reportStamp), now).replace(' sonra', ''))} var.` : ''}`}${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>
     ${next.first.from === HOME ? `
       ${mapsLink('maps-btn on-dark')}
       ${trafficReady() ? '' : `<form class="drive" data-key="${esc(next.key)}">
