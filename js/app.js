@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -611,10 +611,10 @@ function tripHtml(t) {
   t.legs.forEach((l, i) => {
     const dep = toTurkey(l.from, l.depDate, l.dep);
     const trOf = (x) => `TR ${x.time}`;
-    if (i === 0) steps.push({ t: l.dep, tr: dep && trOf(dep), d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight}${dep ? ` · ${fmtShort(l.depDate)} (yerel)` : ''}` });
-    else if (dep) steps.push({ t: l.dep, tr: trOf(dep), d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight} · ${fmtShort(l.depDate)} (yerel) · TR ${fmtShort(dep.date)}` });
+    if (i === 0) steps.push({ t: l.dep, tr: dep && trOf(dep), p: dep && l.from, d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight}${dep ? ` · ${fmtShort(l.depDate)} (yerel)` : ''}` });
+    else if (dep) steps.push({ t: l.dep, tr: trOf(dep), p: l.from, d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight} · ${fmtShort(l.depDate)} (yerel) · TR ${fmtShort(dep.date)}` });
     const arr = toTurkey(l.to, l.arrDate, l.arr);
-    if (arr) steps.push({ t: l.arr, tr: `TR ${arr.time}`, d: `İniş: ${city(l.to)}`, s: `${l.flight} · ${fmtShort(l.arrDate)} (yerel) · TR ${fmtShort(arr.date)}` });
+    if (arr) steps.push({ t: l.arr, tr: `TR ${arr.time}`, p: l.to, d: `İniş: ${city(l.to)}`, s: `${l.flight} · ${fmtShort(l.arrDate)} (yerel) · TR ${fmtShort(arr.date)}` });
   });
   if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}`, s: t.last.flight });
   const hotels = t.layovers.map((y) => `
@@ -628,7 +628,18 @@ function tripHtml(t) {
     <h2>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h2>
     ${t.first.from === HOME ? `<div style="margin-bottom:12px">${mapsLink('maps-btn block')}</div>` : ''}
     <div class="card"><h3>Özet</h3>
-      <ul class="timeline">${steps.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}${s.tr ? `<i class="trt">${s.tr}</i>` : ''}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul>
+      ${(() => {
+        // group consecutive steps by where they happen: Turkey (pink) / abroad (light blue)
+        const groups = [];
+        for (const st of steps) {
+          const place = st.p || HOME;
+          if (groups.at(-1)?.place !== place) groups.push({ place, items: [] });
+          groups.at(-1).items.push(st);
+        }
+        return groups.map((g) => `<div class="tl-grp ${g.place === HOME ? 'g-tr' : 'g-abroad'}">
+          <span class="tl-tag">${g.place === HOME ? 'Türkiye' : esc(city(g.place))} saati</span>
+          <ul class="timeline">${g.items.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}${s.tr ? `<i class="trt">${s.tr}</i>` : ''}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul></div>`).join('');
+      })()}
     </div>
     ${t.stays.length ? `<div class="card"><h3>Orada kalış</h3>${t.stays.map((x) => {
       const inL = t.legs.find((l) => l.to === x.station), outL = t.legs[t.legs.indexOf(inL) + 1];
