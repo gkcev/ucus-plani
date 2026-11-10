@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -720,7 +720,7 @@ function openSettings() {
       </label>
       <button class="btn block" id="ttSaveKey">Anahtarı kaydet</button>
       <label class="field">Ev adresi
-        <input id="ttAddr" type="text" placeholder="Mahalle, sokak, ilçe" value="">
+        <input id="ttAddr" type="text" placeholder="Mahalle, sokak, ilçe" value="${esc(settings.home?.address || '')}">
       </label>
       <div class="two"><button class="btn" id="ttFind">Adresi kaydet ve dene</button><button class="btn" id="ttHere">📍 Şu an evdeyim</button></div>
       <p class="footnote" style="margin:0" id="ttHome">${settings.home ? `Kayıtlı ev: <b>${esc(settings.home.label)}</b>` : 'Ev konumu kayıtlı değil.'}</p>
