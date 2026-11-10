@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -493,7 +493,7 @@ function renderHero() {
       <div class="hero-cell"><small>Kalkış</small><b>${next.first.dep}</b></div>
       <div class="hero-cell"><small>Eve iniş${next.returnStamp ? ' · ' + esc(fmtShort(next.returnStamp.slice(0, 10)).replace(/ \S+$/, '')) : ''}</small><b>${next.returnStamp ? next.returnStamp.slice(11) : '–'}</b></div>
     </div>
-    ${(() => { const a = firstArrival(next); return a ? `<p class="arr-tr">🛬 ${esc(city(a.leg.to))} iniş: <b>${a.tr.time}</b> Türkiye saati${a.tr.date !== next.first.depDate ? ` (${esc(fmtShort(a.tr.date))})` : ''} · yerel ${a.leg.arr}</p>` : ''; })()}
+    ${(() => { const a = firstArrival(next); return a ? `<p class="arr-tr">🛬 ${esc(city(a.leg.to))} iniş: <b>${a.leg.arr}</b> <small class="muted">yerel${a.leg.arrDate !== next.first.depDate ? ', ' + esc(fmtShort(a.leg.arrDate).replace(/ \S+$/, '')) : ''}</small><i class="trt">TR ${a.tr.time}${a.tr.date !== a.leg.arrDate ? ' · ' + esc(fmtShort(a.tr.date).replace(/ \S+$/, '')) : ''}</i></p>` : ''; })()}
     <p class="countdown">${leaveAt > now ? `Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.` : `Evden çıkış saati geçti (${esc(relative(leaveAt, now))}).${next.reportStamp && istDate(next.reportStamp) > now ? ` İmzaya ${esc(relative(istDate(next.reportStamp), now).replace(' sonra', ''))} var.` : ''}`}${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>
     ${next.first.from === HOME ? `
       ${mapsLink('maps-btn on-dark')}
@@ -576,7 +576,7 @@ function renderTrips(r) {
         ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b></span>` : ''}
         ${t.first.from === HOME ? `<span>İmza <b>${t.reportStamp.slice(11)}</b></span>` : ''}
         <span>Kalkış <b>${t.first.dep}</b></span>
-        ${(() => { const a = firstArrival(t); return a ? `<span>${esc(city(a.leg.to))} iniş <b>${a.tr.time}</b> <small class="muted">TR saati${a.tr.date !== t.first.depDate ? ', ' + esc(fmtShort(a.tr.date).replace(/ \S+$/, '')) : ''}</small></span>` : ''; })()}
+        ${(() => { const a = firstArrival(t); return a ? `<span class="arr-cell">${esc(city(a.leg.to))} iniş <b>${a.leg.arr}</b><i class="trt">TR ${a.tr.time}${a.tr.date !== a.leg.arrDate ? ' · ' + esc(fmtShort(a.tr.date).replace(/ \S+$/, '')) : ''}</i></span>` : ''; })()}
         ${t.returnStamp ? `<span>Eve iniş <b>${t.returnStamp.slice(11)}</b> <b class="ret-date">${esc(fmtShort(t.returnStamp.slice(0, 10)))}</b></span>` : ''}
       </div>
       ${t.stays.some((x) => !x.transit) ? `<div class="row stay">${t.stays.filter((x) => !x.transit).map((x) => `<span>📍 ${esc(city(x.station))} kalış: <b>${esc(fmtDur(x.min, { days: true }))}</b></span>`).join('')}</div>` : ''}
@@ -610,10 +610,11 @@ function tripHtml(t) {
   if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
   t.legs.forEach((l, i) => {
     const dep = toTurkey(l.from, l.depDate, l.dep);
-    if (i === 0) steps.push({ t: dep ? dep.time : l.dep, d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight}${dep ? ` · ${fmtShort(dep.date)} · yerel ${l.dep}` : ''}` });
-    else if (dep) steps.push({ t: dep.time, d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight} · ${fmtShort(dep.date)} · yerel ${l.dep}` });
+    const trOf = (x) => `TR ${x.time}`;
+    if (i === 0) steps.push({ t: l.dep, tr: dep && trOf(dep), d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight}${dep ? ` · ${fmtShort(l.depDate)} (yerel)` : ''}` });
+    else if (dep) steps.push({ t: l.dep, tr: trOf(dep), d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight} · ${fmtShort(l.depDate)} (yerel) · TR ${fmtShort(dep.date)}` });
     const arr = toTurkey(l.to, l.arrDate, l.arr);
-    if (arr) steps.push({ t: arr.time, d: `İniş: ${city(l.to)}`, s: `${l.flight} · ${fmtShort(arr.date)} · yerel ${l.arr} (${fmtShort(l.arrDate)})` });
+    if (arr) steps.push({ t: l.arr, tr: `TR ${arr.time}`, d: `İniş: ${city(l.to)}`, s: `${l.flight} · ${fmtShort(l.arrDate)} (yerel) · TR ${fmtShort(arr.date)}` });
   });
   if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}`, s: t.last.flight });
   const hotels = t.layovers.map((y) => `
@@ -626,8 +627,8 @@ function tripHtml(t) {
   return `
     <h2>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h2>
     ${t.first.from === HOME ? `<div style="margin-bottom:12px">${mapsLink('maps-btn block')}</div>` : ''}
-    <div class="card"><h3>Özet (Türkiye saati)</h3>
-      <ul class="timeline">${steps.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul>
+    <div class="card"><h3>Özet</h3>
+      <ul class="timeline">${steps.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}${s.tr ? `<i class="trt">${s.tr}</i>` : ''}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul>
     </div>
     ${t.stays.length ? `<div class="card"><h3>Orada kalış</h3>${t.stays.map((x) => {
       const inL = t.legs.find((l) => l.to === x.station), outL = t.legs[t.legs.indexOf(inL) + 1];

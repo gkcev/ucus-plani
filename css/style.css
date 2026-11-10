@@ -335,6 +335,10 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .months.many .col { min-width: 0; }
 .months.many .col .v, .months.many .col .m { font-size: 10.5px; }
 .mtable.compact td { white-space: nowrap; }
-.leg .ap .trt { display: block; font-style: normal; font-size: 12px; font-weight: 600; color: var(--depart); margin-top: 2px; }
+.trt { display: block; font-style: normal; font-size: 11.5px; font-weight: 600; color: var(--depart); margin-top: 1px; line-height: 1.2; }
+.timeline .t .trt { font-size: 11px; }
+.arr-cell { display: inline-flex; flex-direction: column; align-items: flex-start; }
+.arr-cell .trt { font-size: 11px; }
+.hero .arr-tr .trt { color: #ff8a94; font-size: 12px; }
 .hero .arr-tr { margin: 10px 0 0; font-size: 14.5px; }
 .hero .arr-tr b { font-size: 17px; }
