@@ -1,5 +1,5 @@
 import { parseRoster } from './parser.js';
-import { city } from './stations.js';
+import { city, toTurkey, TZ } from './stations.js';
 import { driveTime, currentPosition } from './traffic.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -438,6 +438,21 @@ function congestion(min, delay = 0) {
 }
 const hhmm = (iso) => new Date(Date.parse(iso) + 3 * 3600000).toISOString().slice(11, 16);
 
+// Turkey-time label for a local time at a foreign airport: "TR 04:20" (+ date when it differs)
+function trTime(code, date, time, { withDate = true } = {}) {
+  const t = toTurkey(code, date, time);
+  if (!t) return '';
+  return `TR ${t.time}${withDate && t.date !== date ? ` · ${fmtShort(t.date).replace(/ \S+$/, '')}` : ''}`;
+}
+// first arrival abroad of a trip, with Turkey time
+function firstArrival(t) {
+  const l = t.legs.find((x) => x.to === t.main) || t.legs.find((x) => x.to !== HOME);
+  const tr = l && toTurkey(l.to, l.arrDate, l.arr);
+  return tr ? { leg: l, tr } : null;
+}
+// what time it is now at an airport
+const localNow = (code) => (TZ[code] ? new Intl.DateTimeFormat('tr-TR', { timeZone: TZ[code], hour: '2-digit', minute: '2-digit' }).format(new Date()) : '');
+
 function renderHero() {
   const now = new Date();
   const T = allTrips();
@@ -457,7 +472,7 @@ function renderHero() {
         <div class="hero-cell"><small>Dönüş günü</small><b style="font-size:16px">${esc(fmtShort(current.returnStamp.slice(0, 10)))}</b></div>
         <div class="hero-cell"><small>Dönüş uçuşu</small><b style="font-size:15px">${esc(current.last.flight)}</b></div>
       </div>
-      <p class="countdown">İstanbul'a inişe ${esc(relative(istDate(current.returnStamp), now).replace(' sonra', ''))} var.</p>`;
+      <p class="countdown">${localNow(arrived?.to || current.main) && (arrived?.to || current.main) !== HOME ? `Oradaki saat (${esc(loc)}): <b>${localNow(arrived?.to || current.main)}</b> · ` : ''}İstanbul'a inişe ${esc(relative(istDate(current.returnStamp), now).replace(' sonra', ''))} var.</p>`;
     el.onclick = () => openTrip(current);
     return;
   }
@@ -478,6 +493,7 @@ function renderHero() {
       <div class="hero-cell"><small>Kalkış</small><b>${next.first.dep}</b></div>
       <div class="hero-cell"><small>Eve iniş${next.returnStamp ? ' · ' + esc(fmtShort(next.returnStamp.slice(0, 10)).replace(/ \S+$/, '')) : ''}</small><b>${next.returnStamp ? next.returnStamp.slice(11) : '–'}</b></div>
     </div>
+    ${(() => { const a = firstArrival(next); return a ? `<p class="arr-tr">🛬 ${esc(city(a.leg.to))} iniş: <b>${a.tr.time}</b> Türkiye saati${a.tr.date !== next.first.depDate ? ` (${esc(fmtShort(a.tr.date))})` : ''} · yerel ${a.leg.arr}</p>` : ''; })()}
     <p class="countdown">${leaveAt > now ? `Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.` : `Evden çıkış saati geçti (${esc(relative(leaveAt, now))}).${next.reportStamp && istDate(next.reportStamp) > now ? ` İmzaya ${esc(relative(istDate(next.reportStamp), now).replace(' sonra', ''))} var.` : ''}`}${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>
     ${next.first.from === HOME ? `
       ${mapsLink('maps-btn on-dark')}
@@ -560,6 +576,7 @@ function renderTrips(r) {
         ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b></span>` : ''}
         ${t.first.from === HOME ? `<span>İmza <b>${t.reportStamp.slice(11)}</b></span>` : ''}
         <span>Kalkış <b>${t.first.dep}</b></span>
+        ${(() => { const a = firstArrival(t); return a ? `<span>${esc(city(a.leg.to))} iniş <b>${a.tr.time}</b> <small class="muted">TR saati${a.tr.date !== t.first.depDate ? ', ' + esc(fmtShort(a.tr.date).replace(/ \S+$/, '')) : ''}</small></span>` : ''; })()}
         ${t.returnStamp ? `<span>Eve iniş <b>${t.returnStamp.slice(11)}</b> <b class="ret-date">${esc(fmtShort(t.returnStamp.slice(0, 10)))}</b></span>` : ''}
       </div>
       ${t.stays.some((x) => !x.transit) ? `<div class="row stay">${t.stays.filter((x) => !x.transit).map((x) => `<span>📍 ${esc(city(x.station))} kalış: <b>${esc(fmtDur(x.min, { days: true }))}</b></span>`).join('')}</div>` : ''}
@@ -584,14 +601,20 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet
 function tripHtml(t) {
   const legs = t.legs.map((l) => `
     <div class="leg">
-      <div class="ap"><b>${l.dep}</b><span>${esc(city(l.from))} · ${esc(fmtShort(l.depDate))}</span></div>
+      <div class="ap"><b>${l.dep}</b><span>${esc(city(l.from))} · ${esc(fmtShort(l.depDate))}</span>${trTime(l.from, l.depDate, l.dep) ? `<i class="trt">${esc(trTime(l.from, l.depDate, l.dep))}</i>` : ''}</div>
       <div class="mid"><b>${esc(l.flight)}</b>✈</div>
-      <div class="ap r"><b>${l.arr}</b><span>${esc(city(l.to))} · ${esc(fmtShort(l.arrDate))}</span></div>
+      <div class="ap r"><b>${l.arr}</b><span>${esc(city(l.to))} · ${esc(fmtShort(l.arrDate))}</span>${trTime(l.to, l.arrDate, l.arr) ? `<i class="trt">${esc(trTime(l.to, l.arrDate, l.arr))}</i>` : ''}</div>
     </div>`).join('');
   const steps = [];
   if (t.leave) steps.push({ t: t.leave.slice(11), d: 'Evden çıkış', s: t.drive ? `İmza − 40 dk − yol ${t.drive} dk − ${DRIVE_BUFFER_MIN} dk pay` : `Kalkıştan ${minLabel(t.leaveBefore)} önce${t.cargo ? ' (kargo)' : ''}`, hl: true });
   if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
-  steps.push({ t: t.first.dep, d: `Kalkış: ${city(t.first.from)} → ${city(t.first.to)}`, s: t.first.flight });
+  t.legs.forEach((l, i) => {
+    const dep = toTurkey(l.from, l.depDate, l.dep);
+    if (i === 0) steps.push({ t: dep ? dep.time : l.dep, d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight}${dep ? ` · ${fmtShort(dep.date)} · yerel ${l.dep}` : ''}` });
+    else if (dep) steps.push({ t: dep.time, d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight} · ${fmtShort(dep.date)} · yerel ${l.dep}` });
+    const arr = toTurkey(l.to, l.arrDate, l.arr);
+    if (arr) steps.push({ t: arr.time, d: `İniş: ${city(l.to)}`, s: `${l.flight} · ${fmtShort(arr.date)} · yerel ${l.arr} (${fmtShort(l.arrDate)})` });
+  });
   if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}`, s: t.last.flight });
   const hotels = t.layovers.map((y) => `
     <dl class="kv">

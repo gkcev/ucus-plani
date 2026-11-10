@@ -335,3 +335,6 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .months.many .col { min-width: 0; }
 .months.many .col .v, .months.many .col .m { font-size: 10.5px; }
 .mtable.compact td { white-space: nowrap; }
+.leg .ap .trt { display: block; font-style: normal; font-size: 12px; font-weight: 600; color: var(--depart); margin-top: 2px; }
+.hero .arr-tr { margin: 10px 0 0; font-size: 14.5px; }
+.hero .arr-tr b { font-size: 17px; }
