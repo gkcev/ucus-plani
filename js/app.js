@@ -16,7 +16,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -264,7 +264,7 @@ function renderStats(r) {
           <span class="m">${esc(SHORT_MONTH.format(new Date(m.key + '-15T12:00:00Z')))}</span>
         </button>`).join('')}</div>` : '<p class="muted" style="margin:0 0 6px">Başka ayların PDF\'lerini yükledikçe burada karşılaştırma görünür.</p>'}
       <table class="mtable">
-        <thead><tr><th>Ay</th><th>Uçuş</th><th>Yurt dışı</th><th>Gece</th><th>İzin</th></tr></thead>
+        <thead><tr><th>Ay</th><th>Uçuş</th><th>Yurt dışı</th><th>Gece</th><th>Boş gün</th></tr></thead>
         <tbody>${all.map((m) => `<tr><td>${esc(monthName(m.key))}</td><td>${fmtHM(m.flightMin)}</td><td>${esc(fmtDur(m.abroadMin, { days: true }))}</td><td>${m.nights}</td><td>${m.dayGroups.find((g) => g.key === 'off').count} gün</td></tr>`).join('')}
         ${all.length > 1 ? `<tr><td><b>Toplam</b></td><td><b>${fmtHM(all.reduce((a, m) => a + m.flightMin, 0))}</b></td><td><b>${esc(fmtDur(all.reduce((a, m) => a + m.abroadMin, 0), { days: true }))}</b></td><td><b>${all.reduce((a, m) => a + m.nights, 0)}</b></td><td><b>${all.reduce((a, m) => a + m.dayGroups.find((g) => g.key === 'off').count, 0)} gün</b></td></tr>` : ''}</tbody>
       </table>
@@ -314,9 +314,9 @@ function renderAllStats() {
     </div>
 
     <div class="card">
-      <h3>Dinlenme, izin, nöbet</h3>
+      <h3>Dinlenme, boş gün, nöbet</h3>
       <dl class="kv">
-        <dt>İzin günü</dt><dd><b>${y.offDays} gün</b></dd>
+        <dt>Boş gün</dt><dd><b>${y.offDays} gün</b></dd>
         <dt>Uçuş sonrası dinlenme</dt><dd><b>${esc(fmtDur(y.postRestMin, { days: true }))}</b></dd>
         <dt>Yurt dışında otelde</dt><dd><b>${esc(fmtDur(y.layoverMin, { days: true }))}</b></dd>
         <dt>Nöbet / CFR</dt><dd><b>${y.standbyCount} kez</b></dd>
@@ -339,7 +339,7 @@ function renderAllStats() {
         </button>`).join('')}</div>
       ${y.months.length > 6 ? '<p class="footnote" style="margin:4px 0 0">Sütun üstündeki sayılar saat.</p>' : ''}
       <table class="mtable compact">
-        <thead><tr><th>Ay</th><th>Uçuş</th><th>Yurt dışı</th><th>Gece</th><th>İzin</th></tr></thead>
+        <thead><tr><th>Ay</th><th>Uçuş</th><th>Yurt dışı</th><th>Gece</th><th>Boş gün</th></tr></thead>
         <tbody>${y.months.map((m) => `<tr><td>${esc(shortMonth(m.key))}</td><td>${fmtHM(m.flightMin)}</td><td>${dayNum(m.abroadMin)}</td><td>${m.nights}</td><td>${m.dayGroups.find((g) => g.key === 'off').count} gün</td></tr>`).join('')}
         <tr><td><b>Toplam</b></td><td><b>${fmtHM(y.flightMin)}</b></td><td><b>${dayNum(y.abroadMin)}</b></td><td><b>${y.nights}</b></td><td><b>${y.offDays} gün</b></td></tr></tbody>
       </table>
@@ -550,7 +550,7 @@ function renderMonth(r) {
   for (let k = 0; k < firstDow; k++) html.push('<div class="cell blank"></div>');
   for (const d of days) {
     const label = d.kind === 'depart' ? `✈ ${d.label}` : d.kind === 'return' ? '↩ Dönüş' : d.label;
-    html.push(`<button class="cell k-${d.kind}${d.date === today ? ' today' : ''}" data-date="${d.date}"${homeStyle(d)} aria-label="${esc(fmtDay(d.date))}: ${esc(label)}${d.sub ? ', ' + esc(d.sub) : ''}">
+    html.push(`<button class="cell k-${d.view || d.kind}${d.date === today ? ' today' : ''}" data-date="${d.date}"${homeStyle(d)} aria-label="${esc(fmtDay(d.date))}: ${esc(label)}${d.sub ? ', ' + esc(d.sub) : ''}">
       ${d.trip?.cargo && ['depart', 'away', 'return'].includes(d.kind) ? '<span class="kbadge" title="Kargo uçuşu">K</span>' : ''}<span class="n">${d.day}</span><span class="lbl">${esc(label)}</span>${d.sub ? `<span class="sub">${esc(d.sub)}</span>` : ''}</button>`);
   }
   cal.innerHTML = html.join('');
@@ -561,7 +561,7 @@ function renderMonth(r) {
 function homeStyle(d) {
   if (!d.home) return '';
   const u = Math.round(d.home.until * 100), f = Math.round(d.home.from * 100);
-  const duty = 'var(--duty-bg)';
+  const duty = d.home.mid === 'standby' ? 'var(--standby-bg)' : 'var(--duty-bg)';
   return ` style="background:linear-gradient(90deg, var(--off-bg) 0 ${u}%, ${duty} ${u}% ${f}%, var(--off-bg) ${f}% 100%)"`;
 }
 
@@ -667,13 +667,18 @@ function openDay(d) {
     return openSheet(landing + tripHtml(t));
   }
   let title = 'Evde 🏠', body = 'Bu gün için bir görev yok.';
-  if (d.kind === 'off') { title = 'İzinli 🏠'; body = codeInfo(d.duty?.type).long || 'Boş gün'; }
+  if (d.kind === 'off') { title = 'Boş gün 🏠'; body = codeInfo(d.duty?.type).long || 'Boş gün'; }
   if (d.kind === 'rest') { title = 'Dinlenme 🏠'; body = `Uçuş sonrası yasal dinlenme. Bitiş: ${fmtShort(d.restOf.restUntil.slice(0, 10))} ${d.restOf.restUntil.slice(11)}`; }
   if (d.kind === 'prev') { title = 'Görevde'; body = 'Önceki aydan devam eden görev. Ayrıntısı önceki ayın programında.'; }
   if (d.kind === 'standby') {
     const ci = codeInfo(d.duty.type);
     title = ci.ground ? ci.label : d.duty.type === 'CFR' ? 'Görev bekleme' : 'Ev nöbeti';
     body = `${esc(ci.long || '')}<br><b style="font-size:22px">${d.duty.code?.dep || d.duty.start.slice(11)} – ${d.duty.code?.arr || d.duty.end.slice(11)}</b>${ci.ground ? '' : '<br><small>Bu saatlerde aranıp uçuşa çağrılabilir.</small>'}`;
+  }
+  if (d.spill) {
+    const ci = codeInfo(d.spill.type);
+    const sp = `<div class="card"><b>${esc(ci.label)} (önceki geceden)</b><br><b style="font-size:22px">${d.spill.start.slice(11)} – ${d.spill.end.slice(11)}</b><br><small>${esc(fmtShort(d.spill.start.slice(0, 10)))} akşamı başladı, bu sabah bitiyor (bitiş ${d.spill.end.slice(11)}).${ci.ground ? '' : ' Bu saatlerde aranıp uçuşa çağrılabilir.'}</small></div>`;
+    return openSheet(`<h2>${title}</h2><p class="muted">${esc(fmtDay(d.date))}</p>${sp}<div class="card">${body}</div>`);
   }
   openSheet(`<h2>${title}</h2><p class="muted">${esc(fmtDay(d.date))}</p><div class="card">${body}</div>`);
 }

@@ -14,14 +14,14 @@ export const shiftStamp = (stamp, minutes) => {
 };
 
 export const CODE_INFO = {
-  IBB: { label: 'İzin', long: 'Boş gün', kind: 'off' },
-  IBI: { label: 'İzin', long: 'Boş gün (talep edilmiş)', kind: 'off' },
+  IBB: { label: 'Boş gün', long: 'Boş gün', kind: 'off' },
+  IBI: { label: 'Boş gün', long: 'Boş gün (talep edilmiş)', kind: 'off' },
   HSBY: { label: 'Nöbet', long: 'Ev nöbeti: evde ama çağrılabilir', kind: 'standby' },
   SBY: { label: 'Nöbet', long: 'Nöbet', kind: 'standby' },
   CFR: { label: 'CFR', long: 'Call for Roster: görev çıkabilir', kind: 'standby' },
   GG: { label: 'Görev', long: 'Önceki aydan devam eden görev', kind: 'prev' },
-  IBE: { label: 'İzin', long: 'Boş gün', kind: 'off' },
-  III: { label: 'İzin', long: 'Boş gün', kind: 'off' },
+  IBE: { label: 'Boş gün', long: 'Boş gün', kind: 'off' },
+  III: { label: 'Boş gün', long: 'Boş gün', kind: 'off' },
   MUA: { label: 'Muayene', long: 'Sağlık muayenesi', kind: 'standby', ground: true },
 };
 /** Label/colour for a day code; simulator (SR1…) and training (RC1…) get their own words. */
@@ -136,6 +136,18 @@ export function buildDays(roster, settings) {
         const rest = T.find((t) => t.restUntil && t.last.arrDate < date && date <= t.restUntil.slice(0, 10));
         if (rest) { info.kind = 'rest'; info.label = 'Evde'; info.sub = 'dinlenme'; info.restOf = rest; }
       }
+    }
+    // overnight standby/ground duty from the previous day spilling into this one (until e.g. 05:00)
+    const spill = !trip && roster.duties.find((d) => d.type !== 'trip' && d.start.slice(0, 10) < date
+      && d.end.slice(0, 10) === date && d.end.slice(11) > '00:00' && codeInfo(d.type).kind === 'standby');
+    if (spill) {
+      const ci = codeInfo(spill.type);
+      info.spill = spill;
+      info.view = 'standby'; // drawn as standby, but kind (for statistics) stays as it was
+      info.afterLabel = info.label;
+      info.label = ci.label;
+      info.sub = `bitiş ${spill.end.slice(11)}`;
+      info.home = { until: 0, from: dayFrac(spill.end.slice(11)), mid: 'standby' };
     }
     // early-morning flight: leaving home the evening before
     const nightLeave = T.find((t) => t.leave && t.leave.slice(0, 10) === date && t.first.depDate !== date);
@@ -267,9 +279,9 @@ export function monthStats(roster, settings) {
   const DAY_GROUPS = [
     { key: 'duty', label: 'Uçuş / yurt dışı', kinds: ['depart', 'away', 'return', 'prev'] },
     { key: 'standby', label: 'Nöbet / bekleme', kinds: ['standby'] },
-    { key: 'off', label: 'İzin', kinds: ['off'] },
+    { key: 'off', label: 'Boş gün', kinds: ['off'] },
     { key: 'rest', label: 'Dinlenme', kinds: ['rest'] },
-    { key: 'free', label: 'Boş (evde)', kinds: ['free'] },
+    { key: 'free', label: 'Evde (kodsuz)', kinds: ['free'] },
   ];
   const days = buildDays(roster, settings);
   const dayGroups = DAY_GROUPS.map((g) => ({ ...g, count: days.filter((d) => g.kinds.includes(d.kind)).length }));
