@@ -186,7 +186,7 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 .card h3 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 
 .timeline { list-style: none; margin: 0; padding: 0; }
-.timeline li { display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+.timeline li { display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
 .timeline li:last-child { border-bottom: 0; }
 .timeline .t { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
 .timeline .d { font-size: 14.5px; }
@@ -348,3 +348,6 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .tl-grp.g-abroad { background: var(--away-bg); }
 .tl-grp .timeline li { border-bottom-color: rgba(0,0,0,.07); }
 .tl-tag { display: block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+.z { font-style: normal; font-size: 10.5px; font-weight: 600; opacity: .6; margin-left: 2px; letter-spacing: .02em; }
+.timeline .t .z { font-size: 10.5px; }
+.leg .ap b .z, .hero-cell b .z { font-size: 11px; }
