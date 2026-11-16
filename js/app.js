@@ -1,5 +1,6 @@
 import { parseRoster } from './parser.js';
-import { city, toTurkey, TZ } from './stations.js';
+import { city, toTurkey, TZ, CITY } from './stations.js';
+import { buildTrip, formFromTrip, addTrip, cancelTrip, undo, resolveStation, knownZone } from './manual.js';
 import { driveTime, currentPosition } from './traffic.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
@@ -16,7 +17,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -506,8 +507,8 @@ function renderHero() {
     ${next.first.from === HOME ? `
       ${mapsLink('maps-btn on-dark')}
       ${trafficReady() ? '' : `<form class="drive" data-key="${esc(next.key)}">
-        <label>Maps'teki yol süresi
-          <input type="number" inputmode="numeric" min="5" max="300" step="1" placeholder="örn. 60" value="${next.drive || ''}" aria-label="Yol süresi, dakika">
+        <label><span>Maps'teki yol süresi
+          </span><input type="number" inputmode="numeric" min="5" max="300" step="1" placeholder="örn. 60" value="${next.drive || ''}" aria-label="Yol süresi, dakika">
           <span>dk</span>
         </label>
         <button type="submit">Hesapla</button>
@@ -559,7 +560,7 @@ function renderMonth(r) {
   for (const d of days) {
     const label = d.kind === 'depart' ? `✈ ${d.label}` : d.kind === 'return' ? '↩ Dönüş' : d.label;
     html.push(`<button class="cell k-${d.view || d.kind}${d.date === today ? ' today' : ''}" data-date="${d.date}"${homeStyle(d)} aria-label="${esc(fmtDay(d.date))}: ${esc(label)}${d.sub ? ', ' + esc(d.sub) : ''}">
-      ${d.trip?.cargo && ['depart', 'away', 'return'].includes(d.kind) ? '<span class="kbadge" title="Kargo uçuşu">K</span>' : ''}<span class="n">${d.day}</span><span class="lbl">${esc(label)}</span>${d.sub ? `<span class="sub">${esc(d.sub)}</span>` : ''}</button>`);
+      ${d.trip?.cargo && ['depart', 'away', 'return'].includes(d.kind) ? '<span class="kbadge" title="Kargo uçuşu">K</span>' : ''}${d.trip?.manual && ['depart', 'away', 'return'].includes(d.kind) ? '<span class="mbadge" title="Elle girildi">✏️</span>' : ''}<span class="n">${d.day}</span><span class="lbl">${esc(label)}</span>${d.sub ? `<span class="sub">${esc(d.sub)}</span>` : ''}</button>`);
   }
   cal.innerHTML = html.join('');
   cal._days = days;
@@ -578,7 +579,7 @@ function renderTrips(r) {
   const T = trips(r, settings);
   $('#tripList').innerHTML = T.length ? T.map((t, i) => `
     <div class="trip${t.returnStamp && istDate(t.returnStamp) < now ? ' past' : ''}" data-trip="${i}" role="button" tabindex="0">
-      <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h4>
+      <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}${t.manual ? ' <span class="mpill">✏️ elle girildi</span>' : ''}</h4>
       <p class="dates">${esc(fmtShort(t.first.depDate))} → ${esc(fmtShort(t.last.arrDate))} · ${esc(t.legs.map((l) => l.flight).join(', '))}</p>
       <div class="row">
         ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b>${Z('TR')}</span>` : ''}
@@ -639,6 +640,7 @@ function tripHtml(t) {
     </dl>`).join('');
   return `
     <h2>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h2>
+    ${t.manual ? '<p class="mnote">✏️ Bu uçuş telefonla gelen bilgiye göre elle girildi.</p>' : ''}
     ${t.first.from === HOME ? `<div style="margin-bottom:12px">${mapsLink('maps-btn block')}</div>` : ''}
     <div class="card"><h3>Özet</h3>
       ${(() => {
@@ -663,7 +665,12 @@ function tripHtml(t) {
     <div class="card"><h3>Uçuşlar</h3>${legs}</div>
     ${hotels ? `<div class="card"><h3>Konaklama</h3>${hotels}</div>` : ''}
     ${t.crew?.length ? `<div class="card"><h3>Kokpit ekibi</h3><div class="chips">${t.crew.map((c) => `<span class="chip">${esc(niceName(c.replace(/\s*\(.*\)$/, '')))} <small>${esc((c.match(/\((.*)\)$/) || [])[1] || '')}</small></span>`).join('')}</div></div>` : ''}
-    ${t.restUntil ? `<p class="footnote">Dinlenme bitişi: ${esc(fmtShort(t.restUntil.slice(0, 10)))} ${t.restUntil.slice(11)}</p>` : ''}`;
+    ${t.restUntil ? `<p class="footnote">Dinlenme bitişi: ${esc(fmtShort(t.restUntil.slice(0, 10)))} ${t.restUntil.slice(11)}</p>` : ''}
+    <div class="card manual-actions"><h3>Değişiklik mi var?</h3>
+      <p class="muted" style="margin:0 0 10px;font-size:13.5px">Telefonla saat/uçuş değiştiyse ya da uçuş iptal olduysa buradan düzelt.</p>
+      ${t.legs.length === 2 ? `<button class="btn block" data-manual-edit="${esc(t.key)}">✏️ Uçuşu düzenle</button>` : ''}
+      <button class="btn block danger" data-manual-cancel="${esc(t.key)}" style="margin-top:8px">✖ Uçuş iptal oldu</button>
+    </div>`;
 }
 function openTrip(t) { openSheet(tripHtml(t)); }
 
@@ -691,10 +698,12 @@ function openDay(d) {
   if (d.spill) {
     const ci = codeInfo(d.spill.type);
     const sp = `<div class="card"><b>${esc(ci.label)} (önceki geceden)</b><br><b style="font-size:22px">${d.spill.start.slice(11)} – ${d.spill.end.slice(11)}</b><br><small>${esc(fmtShort(d.spill.start.slice(0, 10)))} akşamı başladı, bu sabah bitiyor (bitiş ${d.spill.end.slice(11)}).${ci.ground ? '' : ' Bu saatlerde aranıp uçuşa çağrılabilir.'}</small></div>`;
-    return openSheet(`<h2>${title}</h2><p class="muted">${esc(fmtDay(d.date))}</p>${sp}<div class="card">${body}</div>`);
+    return openSheet(`<h2>${title}</h2><p class="muted">${esc(fmtDay(d.date))}</p>${sp}<div class="card">${body}</div>${addBtn(d.date)}`);
   }
-  openSheet(`<h2>${title}</h2><p class="muted">${esc(fmtDay(d.date))}</p><div class="card">${body}</div>`);
+  openSheet(`<h2>${title}</h2><p class="muted">${esc(fmtDay(d.date))}</p><div class="card">${body}</div>${addBtn(d.date)}`);
 }
+const addBtn = (date) => `<button class="btn block primary" data-manual-add="${date}" style="margin-top:4px">✈ Uçuş çıktı / ekle</button>
+  <p class="footnote" style="text-align:center">Nöbetten çağrıldıysa ya da telefonla yeni uçuş geldiyse.</p>`;
 
 $('#calendar').addEventListener('click', (e) => {
   const c = e.target.closest('.cell[data-date]');
@@ -747,6 +756,11 @@ function openSettings() {
       <button class="btn block" id="pasteLinkBtn">📩 Gelen linki yapıştır</button>
       <button class="btn block" id="icsBtn">Telefon takvimine ekle (.ics)</button>` : ''}
     </div>
+    ${(() => {
+      const items = ks.flatMap((k) => (rosters[k].manual?.log || []).map((x) => ({ ...x, k })));
+      return items.length ? `<div class="card"><h3>Elle yapılan değişiklikler</h3>${items.map((x) => `<div class="month-row"><span>${x.kind === 'cancel' ? '✖' : '✏️'} ${esc(x.text)}</span><button class="link-btn" data-undo="${esc(x.k)}|${esc(x.id)}">Geri al</button></div>`).join('')}
+        <p class="footnote" style="margin:6px 0 0">Ayın yeni PDF'i yüklenirse bunlar silinir, PDF esas alınır.</p></div>` : '';
+    })()}
     ${ks.length ? `<div class="card"><h3>Yüklü aylar</h3>${ks.map((k) => `<div class="month-row"><span>${esc(monthName(k))}</span><button class="link-btn" data-del="${k}">Sil</button></div>`).join('')}</div>` : ''}
     <p class="footnote">Sürüm ${APP_VERSION}</p>
     <p class="footnote">🔒 PDF cihazında okunur, hiçbir sunucuya gönderilmez. Paylaşım linki programı linkin içinde taşır, linki kime gönderirsen o görür.</p>`);
@@ -818,6 +832,112 @@ $('#sheet').addEventListener('click', async (e) => {
       toast('Link kopyalandı');
     }
   }
+});
+
+// ---------- changes by phone: add / edit / cancel a flight by hand ----------
+const rosterOfDate = (date) => rosters[date.slice(0, 7)];
+const rosterOfTrip = (key) => keys().map((k) => rosters[k]).find((r) => trips(r, settings).some((t) => t.key === key));
+const cityOptions = Object.entries(CITY).filter(([c]) => c !== HOME).map(([c, n]) => `<option value="${c} – ${esc(n)}">`).join('');
+
+function manualForm(v = {}, editKey = '') {
+  const destVal = v.dest ? `${v.dest} – ${city(v.dest)}` : '';
+  openSheet(`
+    <h2>${editKey ? '✏️ Uçuşu düzenle' : '✈ Uçuş ekle'}</h2>
+    <p class="muted" style="margin-top:-4px">Telefonla gelen bilgiyi gir. Kaydedince takvim, evden çıkış saati ve trafik buna göre hesaplanır.</p>
+    <form id="manualForm" class="mform" data-edit="${esc(editKey)}" autocomplete="off">
+      <div class="card"><h3>Gidiş</h3>
+        <div class="mgrid">
+          <label><span>Uçuş no</span><input name="outFlight" required placeholder="TK201" value="${esc(v.outFlight || '')}" autocapitalize="characters"></label>
+          <label><span>Nereye</span><input name="dest" required list="mcities" placeholder="Denver / DEN" value="${esc(destVal)}"></label>
+          <label><span>Tarih</span><input name="date" type="date" required value="${esc(v.date || '')}"></label>
+          <label><span>Kalkış <small>(TR)</small></span><input name="dep" type="time" required value="${esc(v.dep || '')}"></label>
+          <label><span>Varış <small>(oranın saati)</small></span><input name="arr" type="time" required value="${esc(v.arr || '')}"></label>
+          <label><span>İmza <small>(TR, boş bırakılabilir)</small></span><input name="report" type="time" value="${esc(v.report || '')}"></label>
+        </div>
+      </div>
+      <div class="card"><h3>Dönüş</h3>
+        <div class="mgrid">
+          <label><span>Uçuş no</span><input name="retFlight" required placeholder="TK202" value="${esc(v.retFlight || '')}" autocapitalize="characters"></label>
+          <label><span>Tarih</span><input name="retDate" type="date" required value="${esc(v.retDate || '')}"></label>
+          <label><span>Kalkış <small>(oranın saati)</small></span><input name="retDep" type="time" required value="${esc(v.retDep || '')}"></label>
+          <label><span>İstanbul'a iniş <small>(TR)</small></span><input name="retArr" type="time" required value="${esc(v.retArr || '')}"></label>
+        </div>
+      </div>
+      <datalist id="mcities">${cityOptions}</datalist>
+      <p class="footnote">İmza boşsa kalkıştan 1,5 saat önce (kargo: 1 saat) alınır. Bu günlerdeki nöbet/boş gün kodları uçuşla değiştirilir; Ayarlar'dan geri alınabilir.</p>
+      <button class="btn primary block" type="submit">Kaydet</button>
+    </form>`);
+}
+
+function afterManual(r, msg) {
+  store.set('rosters', rosters);
+  viewKey = r.period.key;
+  render();
+  openSheet(`<h2>✅ ${esc(msg)}</h2>
+    <p>Takvim ve evden çıkış saati güncellendi.</p>
+    <div class="card"><b>Diğer telefona da gönder</b>
+      <p class="muted" style="margin:4px 0 10px;font-size:13.5px">Değişiklik sadece bu telefonda. Eşinin telefonunda da görünmesi için ayın linkini gönder; o açınca onunki de güncellenir.</p>
+      <button class="btn primary block" id="shareBtn">📤 ${esc(monthName(r.period.key))} linkini gönder</button>
+    </div>
+    <p class="footnote">Yanlış olduysa: ⚙️ Ayarlar → Elle yapılan değişiklikler → Geri al.</p>`);
+}
+
+document.addEventListener('click', (e) => {
+  const add = e.target.closest('[data-manual-add]');
+  if (add) {
+    const date = add.dataset.manualAdd;
+    return manualForm({ date, retDate: date });
+  }
+  const ed = e.target.closest('[data-manual-edit]');
+  if (ed) {
+    const r = rosterOfTrip(ed.dataset.manualEdit);
+    const t = r && trips(r, settings).find((x) => x.key === ed.dataset.manualEdit);
+    if (t) manualForm(formFromTrip(t), t.key);
+    return;
+  }
+  const cn = e.target.closest('[data-manual-cancel]');
+  if (cn) {
+    const key = cn.dataset.manualCancel;
+    const r = rosterOfTrip(key);
+    const t = r && trips(r, settings).find((x) => x.key === key);
+    if (!t || !confirm(`${t.first.flight} ${t.title} uçuşu iptal olarak işaretlensin mi? (Ayarlar'dan geri alınabilir)`)) return;
+    cancelTrip(r, key, `m${Date.now()}`);
+    afterManual(r, `${t.first.flight} iptal edildi`);
+    return;
+  }
+  const un = e.target.closest('[data-undo]');
+  if (un) {
+    const [k, id] = un.dataset.undo.split('|');
+    if (!rosters[k] || !confirm('Bu değişiklik geri alınsın mı?')) return;
+    undo(rosters[k], id);
+    store.set('rosters', rosters);
+    render();
+    openSettings();
+    toast('Geri alındı');
+  }
+});
+
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'manualForm') return;
+  e.preventDefault();
+  const fd = Object.fromEntries(new FormData(e.target));
+  const f = { ...fd, outFlight: fd.outFlight.trim().toUpperCase().replace(/\s+/g, ''), retFlight: fd.retFlight.trim().toUpperCase().replace(/\s+/g, '') };
+  f.dest = resolveStation(fd.dest);
+  if (!f.dest || f.dest === HOME) return toast('Gidilen yeri bulamadım: şehir adı ya da 3 harfli kod yaz (ör. DEN)');
+  if (!knownZone(f.dest)) return toast(`${f.dest} için saat dilimi bilinmiyor; şimdilik bilinen şehirler girilebiliyor`);
+  if (f.retDate < f.date) return toast('Dönüş tarihi gidişten önce olamaz');
+  const r = rosterOfDate(f.date);
+  if (!r) return toast(`${monthName(f.date.slice(0, 7))} programı yüklü değil`);
+  const id = `m${Date.now()}`;
+  const duty = buildTrip(f, id);
+  // another flight on the same days? (usually the one this replaces)
+  const end = duty.legs[1].arrDate;
+  const clash = trips(r, settings).filter((t) => t.key !== e.target.dataset.edit && t.first.depDate <= end && t.last.arrDate >= f.date);
+  if (clash.length && confirm(`Bu tarihlerde ${clash.map((t) => `${t.first.flight} ${t.title}`).join(', ')} uçuşu var. O uçuş iptal olup yerine bu mu geldi?\n\nTamam = eskisini iptal et, İptal = ikisini de tut`)) {
+    clash.forEach((t, i) => cancelTrip(r, t.key, `${id}c${i}`));
+  }
+  addTrip(r, duty, e.target.dataset.edit || null);
+  afterManual(r, e.target.dataset.edit ? 'Uçuş güncellendi' : `${f.outFlight} ${city(f.dest)} eklendi`);
 });
 
 function applyShared(shared) {
