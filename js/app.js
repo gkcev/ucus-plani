@@ -4,7 +4,7 @@ import { buildTrip, formFromTrip, addTrip, cancelTrip, undo, resolveStation, kno
 import { driveTime, currentPosition } from './traffic.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
-  monthStats, fmtDur, fmtHM, DRIVE_BUFFER_MIN, SIGNIN_BUFFER_MIN, MEAL_MIN,
+  monthStats, fmtDur, fmtHM, DRIVE_BUFFER_MIN, SIGNIN_BUFFER_MIN, MEAL_MIN, TRANSFER_MIN,
 } from './model.js';
 
 // ---------- storage ----------
@@ -15,9 +15,9 @@ const store = {
   set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch { toast('Kaydedilemedi (depolama kapalı olabilir).'); } },
 };
 let rosters = store.get('rosters', {});
-let settings = { leaveMin: 190, earlyMin: SIGNIN_BUFFER_MIN, bufferMin: DRIVE_BUFFER_MIN, mealMin: MEAL_MIN, ...store.get('settings', {}) };
+let settings = { leaveMin: 190, earlyMin: SIGNIN_BUFFER_MIN, bufferMin: DRIVE_BUFFER_MIN, transferMin: TRANSFER_MIN, mealMin: MEAL_MIN, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -465,7 +465,7 @@ const localNow = (code) => (TZ[code] ? new Intl.DateTimeFormat('tr-TR', { timeZo
 // how the leave-home time was worked out, e.g. "imza 08:30 − 40 dk − yol 55 dk − 10 dk pay − 20 dk yemek"
 function leaveFormula(t, short) {
   const meal = t.meal ? ` − ${t.meal} dk yemek` : '';
-  if (t.drive) return `${short ? 'İmza' : `imza ${t.reportStamp.slice(11)}`} − ${settings.earlyMin} dk − yol ${t.drive} dk − ${settings.bufferMin} dk pay${meal}`;
+  if (t.drive) return `${short ? 'İmza' : `imza ${t.reportStamp.slice(11)}`} − ${settings.earlyMin} dk − transfer ${settings.transferMin} dk − yol ${t.drive} dk − ${settings.bufferMin} dk pay${meal}`;
   return `${short ? 'Kalkıştan' : 'kalkıştan'} ${minLabel(t.leaveBefore - t.meal)} önce${t.cargo ? ' (kargo)' : ''}${meal}`;
 }
 const mealBtn = (t) => `<button type="button" class="meal-btn${t.meal ? ' on' : ''}" data-meal="${esc(t.key)}" aria-pressed="${!!t.meal}">🍽 Orada yemek yiyeceğim <small>${t.meal ? `✓ ${t.meal} dk erken çıkış` : `+${settings.mealMin} dk`}</small></button>`;
@@ -534,7 +534,7 @@ function renderHero() {
           <p class="drive-note">Evden çıkış = ${leaveFormula(next)}</p>${mealBtn(next)}`;
         }
         if (next.drive) return `<p class="drive-note">Evden çıkış = ${leaveFormula(next)} (elle girildi)</p>${mealBtn(next)}`;
-        return `<p class="drive-note">Şu an sabit kural: ${leaveFormula(next)}. ${trafficReady() ? 'Trafik uçuştan 48 saat önce otomatik hesaplanır.' : `Yol süresini yazarsan ya da ⚙️ Ayarlar'dan trafik servisini açarsan imza − ${settings.earlyMin} dk − yol − ${settings.bufferMin} dk pay olarak hesaplanır.`}</p>${mealBtn(next)}`;
+        return `<p class="drive-note">Şu an sabit kural: ${leaveFormula(next)}. ${trafficReady() ? 'Trafik uçuştan 48 saat önce otomatik hesaplanır.' : `Yol süresini yazarsan ya da ⚙️ Ayarlar'dan trafik servisini açarsan imza − ${settings.earlyMin} dk − transfer ${settings.transferMin} dk − yol − ${settings.bufferMin} dk pay olarak hesaplanır.`}</p>${mealBtn(next)}`;
       })()}
       ${trafficReady() ? trafficBtnHtml() : ''}` : ''}`;
   el.onclick = (e) => {
@@ -738,7 +738,7 @@ $('#nextMonth').onclick = () => { const ks = keys(); viewKey = ks[Math.min(ks.le
 
 // ---------- settings ----------
 // minute settings shown with − / + buttons: [min, max, step]
-const STEPS = { earlyMin: [0, 120, 5], bufferMin: [0, 60, 5], mealMin: [5, 90, 5] };
+const STEPS = { earlyMin: [0, 120, 5], bufferMin: [0, 60, 5], transferMin: [0, 60, 5], mealMin: [5, 90, 5] };
 const stepTxt = (f) => `<span data-out="${f}">${settings[f]} dk</span>`;
 const stepper = (f) => `<div class="stepper"><button data-step="-${STEPS[f][2]}" data-field="${f}" aria-label="Azalt">−</button><output>${stepTxt(f)}</output><button data-step="${STEPS[f][2]}" data-field="${f}" aria-label="Arttır">+</button></div>`;
 
@@ -753,15 +753,16 @@ function openSettings() {
         <div class="stepper"><button data-step="-10" aria-label="Azalt">−</button><output id="lh">${minLabel(settings.leaveMin)}</output><button data-step="10" aria-label="Arttır">+</button></div>
       </div>
       <p class="footnote" style="margin:4px 0 0">Kargo uçuşlarında imza 1 saat önce olduğu için evden çıkış 30 dk daha geç: <b id="lhc">${minLabel(settings.leaveMin - 30)}</b> önce.</p>
-      <p class="footnote" style="margin:10px 0 4px">Yol süresi biliniyorsa (trafik ya da elle): <b>imza − ${stepTxt('earlyMin')} − yol − ${stepTxt('bufferMin')} pay</b></p>
+      <p class="footnote" style="margin:10px 0 4px">Yol süresi biliniyorsa (trafik ya da elle): <b>imza − ${stepTxt('earlyMin')} − ${stepTxt('transferMin')} transfer − yol − ${stepTxt('bufferMin')} pay</b></p>
       <div class="row"><span>İmzadan ne kadar önce orada olmalı?</span>${stepper('earlyMin')}</div>
+      <div class="row"><span>🚐 Araba / shuttle transfer süresi</span>${stepper('transferMin')}</div>
       <div class="row"><span>Yol için ek pay</span>${stepper('bufferMin')}</div>
       <div class="row"><span>🍽 Orada yemek süresi</span>${stepper('mealMin')}</div>
       <p class="footnote" style="margin:4px 0 0">Ana sayfadaki "Orada yemek yiyeceğim" seçilince evden çıkış bu kadar erkene alınır.</p>
     </div>
     <div class="card stack" id="trafficCard">
       <h3>Trafik (Google Maps)</h3>
-      <p class="footnote" style="margin:0">Uçuştan önceki 48 saatte evden çıkış, trafiğe göre <b>imza − ${stepTxt('earlyMin')} − yol süresi − ${stepTxt('bufferMin')} pay</b> olarak hesaplanır.</p>
+      <p class="footnote" style="margin:0">Uçuştan önceki 48 saatte evden çıkış, trafiğe göre <b>imza − ${stepTxt('earlyMin')} − ${stepTxt('transferMin')} transfer − yol süresi − ${stepTxt('bufferMin')} pay</b> olarak hesaplanır.</p>
       <label class="field">API anahtarı
         <input id="ttKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Google Maps API key (AIza…)" value="${esc(settings.googleKey || '')}">
       </label>

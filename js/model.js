@@ -35,6 +35,7 @@ export function codeInfo(type = '') {
 export const CARGO_LATER_MIN = 30;
 export const SIGNIN_BUFFER_MIN = 40; // arrive this long before sign-in
 export const DRIVE_BUFFER_MIN = 10; // extra margin on top of the drive time
+export const TRANSFER_MIN = 15; // car park -> terminal (shuttle)
 export const MEAL_MIN = 20; // default time for a meal at the airport before sign-in
 export const tripKey = (depStamp, flight) => `${depStamp}-${flight}`;
 /** Minutes before departure to leave home (passenger default 3h10; cargo 30 min less). */
@@ -59,7 +60,7 @@ export function trips(roster, settings) {
     // eating at the airport before sign-in: leave that much earlier
     const meal = fromHome && settings.meal?.[key] ? (settings.mealMin ?? MEAL_MIN) : 0;
     const leaveBefore = (drive
-      ? Math.round((istDate(depStamp) - istDate(d.report)) / 60000) + (settings.earlyMin ?? SIGNIN_BUFFER_MIN) + drive + (settings.bufferMin ?? DRIVE_BUFFER_MIN)
+      ? Math.round((istDate(depStamp) - istDate(d.report)) / 60000) + (settings.earlyMin ?? SIGNIN_BUFFER_MIN) + (settings.transferMin ?? TRANSFER_MIN) + drive + (settings.bufferMin ?? DRIVE_BUFFER_MIN)
       : leaveMinutes(settings, cargo)) + meal;
     const leave = fromHome ? shiftStamp(depStamp, -leaveBefore) : null;
     const dests = [...new Set(d.legs.map((l) => l.to).filter((s) => s && s !== HOME))];
