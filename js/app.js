@@ -4,7 +4,7 @@ import { buildTrip, formFromTrip, addTrip, cancelTrip, undo, resolveStation, kno
 import { driveTime, currentPosition } from './traffic.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
-  monthStats, fmtDur, fmtHM, DRIVE_BUFFER_MIN,
+  monthStats, fmtDur, fmtHM, DRIVE_BUFFER_MIN, SIGNIN_BUFFER_MIN, MEAL_MIN,
 } from './model.js';
 
 // ---------- storage ----------
@@ -15,9 +15,9 @@ const store = {
   set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch { toast('Kaydedilemedi (depolama kapalı olabilir).'); } },
 };
 let rosters = store.get('rosters', {});
-let settings = { leaveMin: 190, ...store.get('settings', {}) };
+let settings = { leaveMin: 190, earlyMin: SIGNIN_BUFFER_MIN, bufferMin: DRIVE_BUFFER_MIN, mealMin: MEAL_MIN, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 29;
+const APP_VERSION = 30;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -462,6 +462,14 @@ function firstArrival(t) {
 // what time it is now at an airport
 const localNow = (code) => (TZ[code] ? new Intl.DateTimeFormat('tr-TR', { timeZone: TZ[code], hour: '2-digit', minute: '2-digit' }).format(new Date()) : '');
 
+// how the leave-home time was worked out, e.g. "imza 08:30 − 40 dk − yol 55 dk − 10 dk pay − 20 dk yemek"
+function leaveFormula(t, short) {
+  const meal = t.meal ? ` − ${t.meal} dk yemek` : '';
+  if (t.drive) return `${short ? 'İmza' : `imza ${t.reportStamp.slice(11)}`} − ${settings.earlyMin} dk − yol ${t.drive} dk − ${settings.bufferMin} dk pay${meal}`;
+  return `${short ? 'Kalkıştan' : 'kalkıştan'} ${minLabel(t.leaveBefore - t.meal)} önce${t.cargo ? ' (kargo)' : ''}${meal}`;
+}
+const mealBtn = (t) => `<button type="button" class="meal-btn${t.meal ? ' on' : ''}" data-meal="${esc(t.key)}" aria-pressed="${!!t.meal}">🍽 Orada yemek yiyeceğim <small>${t.meal ? `✓ ${t.meal} dk erken çıkış` : `+${settings.mealMin} dk`}</small></button>`;
+
 function renderHero() {
   const now = new Date();
   const T = allTrips();
@@ -523,14 +531,21 @@ function renderHero() {
             <div><small>Şu anki trafik</small><b class="cg-${lv.k}">${next.drive} dk</b></div>
             <span class="tb-meta"><span class="cg-tag cg-${lv.k}">${lv.icon} ${lv.label}</span><br>${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : ''}güncelleme ${hhmm(meta.at)}</span>
           </div>
-          <p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk − ${DRIVE_BUFFER_MIN} dk pay</p>`;
+          <p class="drive-note">Evden çıkış = ${leaveFormula(next)}</p>${mealBtn(next)}`;
         }
-        if (next.drive) return `<p class="drive-note">Evden çıkış = imza ${next.reportStamp.slice(11)} − 40 dk − yol ${next.drive} dk − ${DRIVE_BUFFER_MIN} dk pay (elle girildi)</p>`;
-        return `<p class="drive-note">Şu an sabit kural: kalkıştan ${minLabel(next.leaveBefore)} önce. ${trafficReady() ? 'Trafik uçuştan 48 saat önce otomatik hesaplanır.' : 'Yol süresini yazarsan ya da ⚙️ Ayarlar\'dan trafik servisini açarsan imza − 40 dk − yol süresi olarak hesaplanır.'}</p>`;
+        if (next.drive) return `<p class="drive-note">Evden çıkış = ${leaveFormula(next)} (elle girildi)</p>${mealBtn(next)}`;
+        return `<p class="drive-note">Şu an sabit kural: ${leaveFormula(next)}. ${trafficReady() ? 'Trafik uçuştan 48 saat önce otomatik hesaplanır.' : `Yol süresini yazarsan ya da ⚙️ Ayarlar'dan trafik servisini açarsan imza − ${settings.earlyMin} dk − yol − ${settings.bufferMin} dk pay olarak hesaplanır.`}</p>${mealBtn(next)}`;
       })()}
       ${trafficReady() ? trafficBtnHtml() : ''}` : ''}`;
   el.onclick = (e) => {
     if (e.target.closest('[data-traffic]')) return refreshTraffic(next);
+    const mb = e.target.closest('[data-meal]');
+    if (mb) {
+      settings.meal = { ...(settings.meal || {}) };
+      if (settings.meal[mb.dataset.meal]) delete settings.meal[mb.dataset.meal]; else settings.meal[mb.dataset.meal] = true;
+      store.set('settings', settings);
+      return render();
+    }
     if (!e.target.closest('[data-maps], .drive')) openTrip(next);
   };
   maybeAutoTraffic(next);
@@ -621,7 +636,7 @@ function tripHtml(t) {
       ${apHtml(' r', l.to, l.arrDate, l.arr, 'arr')}
     </div>`).join('');
   const steps = [];
-  if (t.leave) steps.push({ t: t.leave.slice(11), z: 'TR', d: 'Evden çıkış', s: t.drive ? `İmza − 40 dk − yol ${t.drive} dk − ${DRIVE_BUFFER_MIN} dk pay` : `Kalkıştan ${minLabel(t.leaveBefore)} önce${t.cargo ? ' (kargo)' : ''}`, hl: true });
+  if (t.leave) steps.push({ t: t.leave.slice(11), z: 'TR', d: 'Evden çıkış', s: leaveFormula(t, true), hl: true });
   if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), z: 'TR', d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
   t.legs.forEach((l, i) => {
     const dep = dual(l.from, l.depDate, l.dep, 'dep');
@@ -722,6 +737,11 @@ $('#prevMonth').onclick = () => { const ks = keys(); viewKey = ks[Math.max(0, ks
 $('#nextMonth').onclick = () => { const ks = keys(); viewKey = ks[Math.min(ks.length - 1, ks.indexOf(viewKey) + 1)]; render(); };
 
 // ---------- settings ----------
+// minute settings shown with − / + buttons: [min, max, step]
+const STEPS = { earlyMin: [0, 120, 5], bufferMin: [0, 60, 5], mealMin: [5, 90, 5] };
+const stepTxt = (f) => `<span data-out="${f}">${settings[f]} dk</span>`;
+const stepper = (f) => `<div class="stepper"><button data-step="-${STEPS[f][2]}" data-field="${f}" aria-label="Azalt">−</button><output>${stepTxt(f)}</output><button data-step="${STEPS[f][2]}" data-field="${f}" aria-label="Arttır">+</button></div>`;
+
 function openSettings() {
   const ks = keys();
   openSheet(`
@@ -733,10 +753,15 @@ function openSettings() {
         <div class="stepper"><button data-step="-10" aria-label="Azalt">−</button><output id="lh">${minLabel(settings.leaveMin)}</output><button data-step="10" aria-label="Arttır">+</button></div>
       </div>
       <p class="footnote" style="margin:4px 0 0">Kargo uçuşlarında imza 1 saat önce olduğu için evden çıkış 30 dk daha geç: <b id="lhc">${minLabel(settings.leaveMin - 30)}</b> önce.</p>
+      <p class="footnote" style="margin:10px 0 4px">Yol süresi biliniyorsa (trafik ya da elle): <b>imza − ${stepTxt('earlyMin')} − yol − ${stepTxt('bufferMin')} pay</b></p>
+      <div class="row"><span>İmzadan ne kadar önce orada olmalı?</span>${stepper('earlyMin')}</div>
+      <div class="row"><span>Yol için ek pay</span>${stepper('bufferMin')}</div>
+      <div class="row"><span>🍽 Orada yemek süresi</span>${stepper('mealMin')}</div>
+      <p class="footnote" style="margin:4px 0 0">Ana sayfadaki "Orada yemek yiyeceğim" seçilince evden çıkış bu kadar erkene alınır.</p>
     </div>
     <div class="card stack" id="trafficCard">
       <h3>Trafik (Google Maps)</h3>
-      <p class="footnote" style="margin:0">Uçuştan önceki 48 saatte evden çıkış, trafiğe göre <b>imza − 40 dk − yol süresi</b> olarak hesaplanır.</p>
+      <p class="footnote" style="margin:0">Uçuştan önceki 48 saatte evden çıkış, trafiğe göre <b>imza − ${stepTxt('earlyMin')} − yol süresi − ${stepTxt('bufferMin')} pay</b> olarak hesaplanır.</p>
       <label class="field">API anahtarı
         <input id="ttKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Google Maps API key (AIza…)" value="${esc(settings.googleKey || '')}">
       </label>
@@ -792,7 +817,13 @@ $('#sheet').addEventListener('click', async (e) => {
     } catch (err) { toast(err.message); }
   }
   const step = e.target.closest('[data-step]');
-  if (step) {
+  if (step?.dataset.field) {
+    const f = step.dataset.field, [lo, hi] = STEPS[f];
+    settings[f] = Math.min(hi, Math.max(lo, settings[f] + Number(step.dataset.step)));
+    store.set('settings', settings);
+    document.querySelectorAll(`[data-out="${f}"]`).forEach((x) => { x.textContent = `${settings[f]} dk`; });
+    render();
+  } else if (step) {
     settings.leaveMin = Math.min(360, Math.max(90, settings.leaveMin + Number(step.dataset.step)));
     store.set('settings', settings);
     $('#lh').textContent = minLabel(settings.leaveMin);

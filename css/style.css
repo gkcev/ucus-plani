@@ -359,3 +359,8 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .mgrid label small { font-weight: 500; }
 .mgrid input { font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; min-width: 0; width: 100%; box-sizing: border-box; }
 .mform .card { margin-bottom: 12px; }
+.meal-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin-top: 10px; padding: 10px 12px; border-radius: 12px; border: 1px dashed rgba(255,255,255,.35); background: transparent; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-align: left; }
+.meal-btn small { font-weight: 500; opacity: .75; white-space: nowrap; }
+.meal-btn.on { background: rgba(255,255,255,.16); border-style: solid; border-color: rgba(255,255,255,.5); }
+.meal-btn.on small { opacity: 1; }
+.settings .row + .row { margin-top: 6px; }
