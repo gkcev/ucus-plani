@@ -17,7 +17,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, earlyMin: SIGNIN_BUFFER_MIN, bufferMin: DRIVE_BUFFER_MIN, transferMin: TRANSFER_MIN, mealMin: MEAL_MIN, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -468,7 +468,7 @@ function leaveFormula(t, short) {
   if (t.drive) return `${short ? 'İmza' : `imza ${t.reportStamp.slice(11)}`} − ${settings.earlyMin} dk − transfer ${settings.transferMin} dk − yol ${t.drive} dk − ${settings.bufferMin} dk pay${meal}`;
   return `${short ? 'Kalkıştan' : 'kalkıştan'} ${minLabel(t.leaveBefore - t.meal)} önce${t.cargo ? ' (kargo)' : ''}${meal}`;
 }
-const mealBtn = (t) => `<button type="button" class="meal-btn${t.meal ? ' on' : ''}" data-meal="${esc(t.key)}" aria-pressed="${!!t.meal}">🍽 Orada yemek yiyeceğim <small>${t.meal ? `✓ ${t.meal} dk erken çıkış` : `+${settings.mealMin} dk`}</small></button>`;
+const mealBtn = (t) => `<label class="meal-chk${t.meal ? ' on' : ''}"><input type="checkbox" data-meal="${esc(t.key)}"${t.meal ? ' checked' : ''}><span>🍽 Orada yemek yiyeceğim</span><small>${t.meal ? `${t.meal} dk erken çıkış` : `+${settings.mealMin} dk`}</small></label>`;
 
 function renderHero() {
   const now = new Date();
@@ -539,6 +539,8 @@ function renderHero() {
       ${trafficReady() ? trafficBtnHtml() : ''}` : ''}`;
   el.onclick = (e) => {
     if (e.target.closest('[data-traffic]')) return refreshTraffic(next);
+    // a click on the label is passed on to the checkbox by the browser; act once, on the checkbox
+    if (e.target.closest('.meal-chk') && !e.target.matches('[data-meal]')) return;
     const mb = e.target.closest('[data-meal]');
     if (mb) {
       settings.meal = { ...(settings.meal || {}) };
