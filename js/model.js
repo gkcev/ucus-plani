@@ -36,6 +36,7 @@ export const CARGO_LATER_MIN = 30;
 export const SIGNIN_BUFFER_MIN = 40; // arrive this long before sign-in
 export const DRIVE_BUFFER_MIN = 10; // extra margin on top of the drive time
 export const TRANSFER_MIN = 15; // car park -> terminal (shuttle)
+export const EST_DRIVE_MIN = 35; // drive time assumed until traffic is known
 export const MEAL_MIN = 20; // default time for a meal at the airport before sign-in
 export const tripKey = (depStamp, flight) => `${depStamp}-${flight}`;
 /** Minutes before departure to leave home (passenger default 3h10; cargo 30 min less). */
@@ -54,13 +55,15 @@ export function trips(roster, settings) {
     // Cargo: sign-in 1h before departure (passenger: 1.5h) -> leave home 30 min later.
     const signInGap = (istDate(depStamp) - istDate(d.report)) / 60000;
     const cargo = fromHome && (signInGap > 0 ? signInGap <= 65 : /^TK6\d{3}$/.test(first.flight));
-    // With a drive time (Google traffic or typed): leave = sign-in − 40 min − drive time − 10 min margin.
+    // leave = sign-in − be there early − car park transfer − drive − margin (− meal).
+    // Drive: Google traffic or typed; until then the estimated drive time from settings.
     const key = tripKey(depStamp, first.flight);
     const drive = fromHome ? settings.drive?.[key] : null;
     // eating at the airport before sign-in: leave that much earlier
     const meal = fromHome && settings.meal?.[key] ? (settings.mealMin ?? MEAL_MIN) : 0;
-    const leaveBefore = (drive
-      ? Math.round((istDate(depStamp) - istDate(d.report)) / 60000) + (settings.earlyMin ?? SIGNIN_BUFFER_MIN) + (settings.transferMin ?? TRANSFER_MIN) + drive + (settings.bufferMin ?? DRIVE_BUFFER_MIN)
+    const road = drive || (settings.estDrive ?? EST_DRIVE_MIN);
+    const leaveBefore = (signInGap > 0
+      ? Math.round(signInGap) + (settings.earlyMin ?? SIGNIN_BUFFER_MIN) + (settings.transferMin ?? TRANSFER_MIN) + road + (settings.bufferMin ?? DRIVE_BUFFER_MIN)
       : leaveMinutes(settings, cargo)) + meal;
     const leave = fromHome ? shiftStamp(depStamp, -leaveBefore) : null;
     const dests = [...new Set(d.legs.map((l) => l.to).filter((s) => s && s !== HOME))];
@@ -75,7 +78,7 @@ export function trips(roster, settings) {
     });
     return {
       ...d,
-      stays, cargo, leaveBefore, key, drive: drive || null, meal,
+      stays, cargo, leaveBefore, key, drive: drive || null, road, meal,
       first, last, leave, depStamp,
       reportStamp: d.report,
       returnStamp: last.to === HOME ? `${last.arrDate}T${last.arr}` : null,
