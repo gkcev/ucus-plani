@@ -17,7 +17,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, earlyMin: SIGNIN_BUFFER_MIN, bufferMin: DRIVE_BUFFER_MIN, transferMin: TRANSFER_MIN, mealMin: MEAL_MIN, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
