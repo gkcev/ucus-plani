@@ -17,7 +17,7 @@ const store = {
 let rosters = store.get('rosters', {});
 let settings = { leaveMin: 190, earlyMin: SIGNIN_BUFFER_MIN, bufferMin: DRIVE_BUFFER_MIN, transferMin: TRANSFER_MIN, mealMin: MEAL_MIN, ...store.get('settings', {}) };
 delete settings.leaveHours; // old setting (hours) replaced by leaveMin
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -744,6 +744,15 @@ const STEPS = { earlyMin: [0, 120, 5], bufferMin: [0, 60, 5], transferMin: [0, 6
 const stepTxt = (f) => `<span data-out="${f}">${settings[f]} dk</span>`;
 const stepper = (f) => `<div class="stepper"><button data-step="-${STEPS[f][2]}" data-field="${f}" aria-label="Azalt">−</button><output>${stepTxt(f)}</output><button data-step="${STEPS[f][2]}" data-field="${f}" aria-label="Arttır">+</button></div>`;
 
+// next flight from home, with the rule its leave-home time uses right now
+function leavePreview() {
+  const t = allTrips().find((x) => istDate(x.depStamp) > new Date() && x.leave);
+  if (!t) return '';
+  return `<div class="leave-prev"><small>Sıradaki uçuş · ${esc(t.title)} · ${esc(fmtShort(t.first.depDate))}</small>
+    <b>Evden çıkış ${t.leave.slice(11)}</b>
+    <small>${t.drive ? `Yol süresi biliniyor (${t.drive} dk) → <b>2. kural</b> kullanılıyor` : `Yol süresi henüz yok → <b>1. kural</b> kullanılıyor`}: ${esc(leaveFormula(t))}</small></div>`;
+}
+
 function openSettings() {
   const ks = keys();
   openSheet(`
@@ -751,11 +760,14 @@ function openSettings() {
     <p class="muted">Bu ayarlar sadece bu cihazda saklanır.</p>
     <div class="card settings">
       <h3>Evden çıkış</h3>
+      <div id="leavePreview">${leavePreview()}</div>
+      <p class="sub-h">1 · Yol süresi henüz bilinmiyorsa (uçuşa 48 saatten fazla varken)</p>
       <div class="row"><span>Yolcu uçuşu: kalkıştan ne kadar önce?</span>
         <div class="stepper"><button data-step="-10" aria-label="Azalt">−</button><output id="lh">${minLabel(settings.leaveMin)}</output><button data-step="10" aria-label="Arttır">+</button></div>
       </div>
       <p class="footnote" style="margin:4px 0 0">Kargo uçuşlarında imza 1 saat önce olduğu için evden çıkış 30 dk daha geç: <b id="lhc">${minLabel(settings.leaveMin - 30)}</b> önce.</p>
-      <p class="footnote" style="margin:10px 0 4px">Yol süresi biliniyorsa (trafik ya da elle): <b>imza − ${stepTxt('earlyMin')} − ${stepTxt('transferMin')} transfer − yol − ${stepTxt('bufferMin')} pay</b></p>
+      <p class="sub-h">2 · Yol süresi biliniyorsa (trafik hesaplandıysa ya da elle yazıldıysa)</p>
+      <p class="footnote" style="margin:0 0 4px"><b>imza − ${stepTxt('earlyMin')} − ${stepTxt('transferMin')} transfer − yol − ${stepTxt('bufferMin')} pay</b></p>
       <div class="row"><span>İmzadan ne kadar önce orada olmalı?</span>${stepper('earlyMin')}</div>
       <div class="row"><span>🚐 Araba / shuttle transfer süresi</span>${stepper('transferMin')}</div>
       <div class="row"><span>Yol için ek pay</span>${stepper('bufferMin')}</div>
@@ -825,12 +837,14 @@ $('#sheet').addEventListener('click', async (e) => {
     settings[f] = Math.min(hi, Math.max(lo, settings[f] + Number(step.dataset.step)));
     store.set('settings', settings);
     document.querySelectorAll(`[data-out="${f}"]`).forEach((x) => { x.textContent = `${settings[f]} dk`; });
+    $('#leavePreview').innerHTML = leavePreview();
     render();
   } else if (step) {
     settings.leaveMin = Math.min(360, Math.max(90, settings.leaveMin + Number(step.dataset.step)));
     store.set('settings', settings);
     $('#lh').textContent = minLabel(settings.leaveMin);
     $('#lhc').textContent = minLabel(settings.leaveMin - 30);
+    $('#leavePreview').innerHTML = leavePreview();
     render();
   }
   const del = e.target.closest('[data-del]');
