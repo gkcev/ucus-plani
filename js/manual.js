@@ -80,7 +80,7 @@ const sortDuties = (r) => r.duties.sort((x, y) => (x.start < y.start ? -1 : x.st
 const dutyOfTrip = (r, key) => r.duties.find((d) => d.type === 'trip' && d.legs.length
   && tripKey(`${d.legs[0].depDate}T${d.legs[0].dep}`, d.legs[0].flight) === key);
 const book = (r) => (r.manual ||= { log: [], removed: [] });
-const label = (d) => `${d.legs[0].flight} ${CITY[d.legs[0].to] || d.legs[0].to}`;
+const label = (d) => { const c = d.layovers?.[0]?.station || d.legs[0].to; return `${d.legs[0].flight} ${CITY[c] || c}`; };
 
 /**
  * Adds a trip typed by hand. Stand-by / day-off codes on the days it covers are set aside
@@ -106,7 +106,7 @@ export function addTrip(r, duty, replaceKey) {
   }
   r.duties.push(duty);
   sortDuties(r);
-  m.log.push({ id, kind, text: kind === 'edit' ? `${was} → ${label(duty)} (${from})` : `${label(duty)} eklendi (${from})`, at: new Date().toISOString() });
+  m.log.push({ id, kind, text: kind === 'edit' ? `${was} → ${label(duty)} (${from})` : `${label(duty)} ${duty.fromMail ? 'mailden ' : ''}eklendi (${from})`, at: new Date().toISOString() });
 }
 
 export function cancelTrip(r, key, id) {

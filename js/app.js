@@ -2,6 +2,7 @@ import { parseRoster } from './parser.js';
 import { city, toTurkey, TZ, CITY } from './stations.js';
 import { buildTrip, formFromTrip, addTrip, cancelTrip, undo, resolveStation, knownZone } from './manual.js';
 import { driveTime, currentPosition } from './traffic.js';
+import { parseMail, buildMailTrip } from './mail.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
   monthStats, fmtDur, fmtHM, DRIVE_BUFFER_MIN, SIGNIN_BUFFER_MIN, MEAL_MIN, TRANSFER_MIN,
@@ -20,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -599,7 +600,7 @@ function renderTrips(r) {
   const T = trips(r, settings);
   $('#tripList').innerHTML = T.length ? T.map((t, i) => `
     <div class="trip${t.returnStamp && istDate(t.returnStamp) < now ? ' past' : ''}" data-trip="${i}" role="button" tabindex="0">
-      <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}${t.manual ? ' <span class="mpill">✏️ elle girildi</span>' : ''}</h4>
+      <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}${t.manual ? ` <span class="mpill">${t.fromMail ? '📧 mailden' : '✏️ elle girildi'}</span>` : ''}</h4>
       <p class="dates">${esc(fmtShort(t.first.depDate))} → ${esc(fmtShort(t.last.arrDate))} · ${esc(t.legs.map((l) => l.flight).join(', '))}</p>
       <div class="row">
         ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b>${Z('TR')}</span>` : ''}
@@ -660,7 +661,7 @@ function tripHtml(t) {
     </dl>`).join('');
   return `
     <h2>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h2>
-    ${t.manual ? '<p class="mnote">✏️ Bu uçuş telefonla gelen bilgiye göre elle girildi.</p>' : ''}
+    ${t.manual ? `<p class="mnote">${t.fromMail ? '📧 Bu uçuş değişiklik mailinden eklendi.' : '✏️ Bu uçuş telefonla gelen bilgiye göre elle girildi.'}</p>` : ''}
     ${t.first.from === HOME ? `<div style="margin-bottom:12px">${mapsLink('maps-btn block')}</div>` : ''}
     <div class="card"><h3>Özet</h3>
       ${(() => {
@@ -687,7 +688,8 @@ function tripHtml(t) {
     ${t.crew?.length ? `<div class="card"><h3>Kokpit ekibi</h3><div class="chips">${t.crew.map((c) => `<span class="chip">${esc(niceName(c.replace(/\s*\(.*\)$/, '')))} <small>${esc((c.match(/\((.*)\)$/) || [])[1] || '')}</small></span>`).join('')}</div></div>` : ''}
     ${t.restUntil ? `<p class="footnote">Dinlenme bitişi: ${esc(fmtShort(t.restUntil.slice(0, 10)))} ${t.restUntil.slice(11)}</p>` : ''}
     <div class="card manual-actions"><h3>Değişiklik mi var?</h3>
-      <p class="muted" style="margin:0 0 10px;font-size:13.5px">Telefonla saat/uçuş değiştiyse ya da uçuş iptal olduysa buradan düzelt.</p>
+      <p class="muted" style="margin:0 0 10px;font-size:13.5px">Mail ya da telefonla saat/uçuş değiştiyse ya da uçuş iptal olduysa buradan düzelt.</p>
+      <button class="btn block primary" data-mail-add style="margin-bottom:8px">📧 Değişiklik mailini ekle</button>
       ${t.legs.length === 2 ? `<button class="btn block" data-manual-edit="${esc(t.key)}">✏️ Uçuşu düzenle</button>` : ''}
       <button class="btn block danger" data-manual-cancel="${esc(t.key)}" style="margin-top:8px">✖ Uçuş iptal oldu</button>
     </div>`;
@@ -722,7 +724,8 @@ function openDay(d) {
   }
   openSheet(`<h2>${title}</h2><p class="muted">${esc(fmtDay(d.date))}</p><div class="card">${body}</div>${addBtn(d.date)}`);
 }
-const addBtn = (date) => `<button class="btn block primary" data-manual-add="${date}" style="margin-top:4px">✈ Uçuş çıktı / ekle</button>
+const addBtn = (date) => `<button class="btn block primary" data-mail-add style="margin-top:4px">📧 Değişiklik mailini ekle</button>
+  <button class="btn block" data-manual-add="${date}" style="margin-top:8px">✈ Uçuş çıktı / elle ekle</button>
   <p class="footnote" style="text-align:center">Nöbetten çağrıldıysa ya da telefonla yeni uçuş geldiyse.</p>`;
 
 $('#calendar').addEventListener('click', (e) => {
@@ -795,7 +798,8 @@ function openSettings() {
     <div class="card stack">
       <h3>Program</h3>
       <label class="btn primary block">PDF yükle (birden fazla seçebilirsin)<input type="file" accept="application/pdf,.pdf" class="file-input" multiple hidden></label>
-      ${ks.length ? `<button class="btn block" id="shareBtn">Bu ayı paylaş (link)</button>
+      ${ks.length ? `<button class="btn block" data-mail-add>📧 Değişiklik mailini ekle (resim / metin)</button>
+      <button class="btn block" id="shareBtn">Bu ayı paylaş (link)</button>
       ${ks.length > 1 ? `<button class="btn block" id="shareAllBtn">Tüm ayları paylaş (${ks.length} ay, tek link)</button>` : ''}
       <button class="btn block" id="pasteLinkBtn">📩 Gelen linki yapıştır</button>
       <button class="btn block" id="icsBtn">Telefon takvimine ekle (.ics)</button>` : ''}
@@ -915,6 +919,86 @@ function manualForm(v = {}, editKey = '') {
     </form>`);
 }
 
+// ---------- duty-notification mail (screenshot or pasted text) ----------
+let mailParsed = null;
+function mailForm() {
+  mailParsed = null;
+  openSheet(`
+    <h2>📧 Değişiklik maili</h2>
+    <p class="muted" style="margin-top:-4px">"Duty notification" mailinin ekran görüntüsünü seç ya da metnini yapıştır. Saatler UTC'den yerel saate çevrilir.</p>
+    <label class="btn primary block">📷 Ekran görüntüsü seç<input type="file" accept="image/*" id="mailImg" hidden></label>
+    <p class="footnote" id="mailStatus" style="text-align:center">Resim telefonda okunur, hiçbir yere gönderilmez.</p>
+    <label class="field">Mail metni <small class="muted">(resimden okunan buraya gelir, yanlış okunan yeri düzeltebilirsin)</small>
+      <textarea id="mailText" rows="7" placeholder="TK 6372 - 77X&#10;23/11/2026 22:55 / IST - 24/11/2026 00:45 / BEY …"></textarea>
+    </label>
+    <div id="mailPrev"></div>
+    <button class="btn primary block" id="mailSave" disabled>Takvime ekle</button>`);
+}
+const trTime = (code, date, time) => (code === HOME ? null : toTurkey(code, date, time));
+function showMail() {
+  const p = parseMail($('#mailText').value);
+  mailParsed = p.trips.length && !p.problems.length ? p : null;
+  $('#mailSave').disabled = !mailParsed;
+  if (!$('#mailText').value.trim()) { $('#mailPrev').innerHTML = ''; return; }
+  const trips = p.trips.map((x, i) => {
+    let d;
+    try { d = buildMailTrip(x, 'p'); } catch { return ''; }
+    const rows = d.legs.map((l) => {
+      const a = trTime(l.to, l.arrDate, l.arr), dp = trTime(l.from, l.depDate, l.dep);
+      return `<div class="mrow"><b>${esc(l.flight)}</b> ${esc(city(l.from))} → ${esc(city(l.to))}
+        <span>Kalkış ${esc(dshort(l.depDate))} <b>${l.dep}</b>${Z(l.from === HOME ? 'TR' : l.from)}${dp ? ` <i class="trt">${dp.time} (TR)</i>` : ''}
+        · İniş ${l.arrDate !== l.depDate ? esc(dshort(l.arrDate)) + ' ' : ''}<b>${l.arr}</b>${Z(l.to === HOME ? 'TR' : l.to)}${a ? ` <i class="trt">${a.time} (TR)</i>` : ''}</span></div>`;
+    }).join('');
+    return `<div class="card"><h3>${p.trips.length > 1 ? `Görev ${i + 1} · ` : ''}İmza ${esc(dshort(d.report.slice(0, 10)))} ${d.report.slice(11)}${Z('TR')}</h3>${rows}
+      ${d.layovers.map((o) => `<p class="footnote" style="margin:6px 0 0">${esc(city(o.station))}'da ${o.rest} saat yer süresi</p>`).join('')}</div>`;
+  }).join('');
+  $('#mailPrev').innerHTML = `${p.problems.length ? `<p class="mail-err">⚠️ ${p.problems.map(esc).join('<br>⚠️ ')}<br><small>Metni kontrol edip düzelt.</small></p>` : ''}${trips}`;
+}
+let tess = null;
+const loadOcr = () => tess ||= new Promise((ok, no) => {
+  const sc = document.createElement('script');
+  sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+  sc.onload = () => ok(window.Tesseract);
+  sc.onerror = () => { tess = null; no(new Error('Okuma aracı yüklenemedi (internet var mı?)')); };
+  document.head.append(sc);
+});
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'mailImg' || !e.target.files[0]) return;
+  const st = $('#mailStatus');
+  try {
+    st.textContent = 'Okuma aracı hazırlanıyor… (ilk seferde biraz sürer)';
+    const T = await loadOcr();
+    const { data } = await T.recognize(e.target.files[0], 'eng', {
+      logger: (m) => { if (m.status === 'recognizing text') st.textContent = `Resim okunuyor… %${Math.round(m.progress * 100)}`; },
+    });
+    $('#mailText').value = data.text;
+    st.textContent = 'Okundu. Aşağıdaki saatleri maille karşılaştır.';
+    showMail();
+  } catch (err) { st.textContent = `Okunamadı: ${err.message}. Mail metnini kopyalayıp yapıştırabilirsin.`; }
+});
+document.addEventListener('input', (e) => { if (e.target.id === 'mailText') showMail(); });
+function saveMail() {
+  if (!mailParsed) return;
+  let last = null, n = 0;
+  for (const [i, x] of mailParsed.trips.entries()) {
+    const id = `e${Date.now()}${i}`;
+    const duty = buildMailTrip(x, id);
+    const from = duty.legs[0].depDate, to = duty.legs[duty.legs.length - 1].arrDate;
+    const r = rosterOfDate(from);
+    if (!r) { toast(`${monthName(from.slice(0, 7))} programı yüklü değil`); continue; }
+    const key = `${from}T${duty.legs[0].dep}-${duty.legs[0].flight}`;
+    // already added from this same mail?
+    if (trips(r, settings).some((t) => t.key === key && t.fromMail)) { toast('Bu mail zaten eklenmiş'); continue; }
+    const clash = trips(r, settings).filter((t) => t.first.depDate <= to && t.last.arrDate >= from);
+    if (clash.length && confirm(`Bu tarihlerde ${clash.map((t) => `${t.first.flight} ${t.title}`).join(', ')} uçuşu var. Maildeki uçuş onun yerine mi geldi?\n\nTamam = eskisini iptal et, İptal = ikisini de tut`)) {
+      clash.forEach((t, j) => cancelTrip(r, t.key, `${id}c${j}`));
+    }
+    addTrip(r, duty);
+    last = r; n++;
+  }
+  if (last) afterManual(last, n > 1 ? `${n} görev mailden eklendi` : 'Mailden eklendi');
+}
+
 function afterManual(r, msg) {
   store.set('rosters', rosters);
   viewKey = r.period.key;
@@ -929,6 +1013,8 @@ function afterManual(r, msg) {
 }
 
 document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-mail-add]')) return mailForm();
+  if (e.target.id === 'mailSave') return saveMail();
   const add = e.target.closest('[data-manual-add]');
   if (add) {
     const date = add.dataset.manualAdd;

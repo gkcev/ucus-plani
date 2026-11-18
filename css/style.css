@@ -374,3 +374,10 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .leave-total { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--off-bg); font-size: 14px; }
 .leave-total small { color: var(--muted); }
 .settings .row small.muted { display: block; font-size: 12px; }
+.mrow { padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.mrow:first-of-type { border-top: 0; }
+.mrow > span { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.mrow > span b { color: var(--text); }
+.mrow .trt { display: inline; font-style: normal; }
+.mail-err { padding: 10px 12px; border-radius: 12px; background: var(--standby-bg); color: var(--text); font-size: 13.5px; }
+#mailText { width: 100%; font: 13px/1.4 ui-monospace, Menlo, monospace; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); box-sizing: border-box; }
