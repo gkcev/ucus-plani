@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -593,7 +593,7 @@ function renderMonth(r) {
 function homeStyle(d) {
   if (!d.home) return '';
   const u = Math.round(d.home.until * 100), f = Math.round(d.home.from * 100);
-  const duty = d.home.mid === 'standby' ? 'var(--standby-bg)' : 'var(--duty-bg)';
+  const duty = d.home.mid === 'standby' ? 'var(--standby-bg)' : 'var(--fly-bg)';
   return ` style="background:linear-gradient(90deg, var(--off-bg) 0 ${u}%, ${duty} ${u}% ${f}%, var(--off-bg) ${f}% 100%)"`;
 }
 
