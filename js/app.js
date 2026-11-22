@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -399,10 +399,10 @@ function setTrafficBtn(state, msg) {
 }
 function trafficBtnHtml(small = false) {
   const s = trafficBtn.state;
-  const label = s === 'busy' ? (small ? '⏳ …' : '⏳ Hesaplanıyor…')
-    : s === 'done' ? (small ? '✓ Tamam' : '✓ Güncellendi')
-    : s === 'error' ? (small ? '⚠️ Hata' : `⚠️ ${esc(trafficBtn.msg || 'Güncellenemedi')}`)
-    : (small ? '🔄 Hesapla' : '🔄 Trafiği şimdi hesapla');
+  const label = s === 'busy' ? (small ? 'Hesaplanıyor…' : '⏳ Hesaplanıyor…')
+    : s === 'done' ? (small ? 'Güncellendi' : '✓ Güncellendi')
+    : s === 'error' ? (small ? 'Hata' : `⚠️ ${esc(trafficBtn.msg || 'Güncellenemedi')}`)
+    : (small ? 'Yol Hesapla' : '🔄 Trafiği şimdi hesapla');
   const title = s === 'error' ? ` title="${esc(trafficBtn.msg || 'Güncellenemedi')}"` : '';
   return `<button class="${small ? 'tb-btn' : 'maps-btn on-dark'} traffic-btn is-${s}" data-traffic${title} ${s === 'busy' ? 'disabled' : ''} aria-live="polite">${label}</button>`;
 }
@@ -535,7 +535,7 @@ function renderHero() {
           return `<div class="traffic-big">
             <span class="tb-icon" aria-hidden="true">🚦</span>
             <div><small>Şu anki trafik</small><b class="cg-${lv.k}">${next.drive} dk</b></div>
-            <span class="tb-meta"><span class="tb-btns"><a class="tb-btn" href="${MAPS_URL}" target="_blank" rel="noopener" data-maps>🗺️ Harita</a>${trafficBtnHtml(true)}</span>${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : ''}güncelleme ${hhmm(meta.at)}</span>
+            <span class="tb-meta"><span class="tb-btns"><a class="tb-btn" href="${MAPS_URL}" target="_blank" rel="noopener" data-maps>Haritayı Gör</a>${trafficBtnHtml(true)}</span>${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : ''}güncelleme ${hhmm(meta.at)}</span>
           </div>
           <p class="drive-note">Evden çıkış = ${leaveFormula(next)}</p>${mealBtn(next)}`;
         }
