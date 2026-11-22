@@ -4,6 +4,7 @@
 import { addDays } from './parser.js';
 import { HOME, shiftStamp, tripKey } from './model.js';
 import { CITY, TZ, toTurkey } from './stations.js';
+import { localAt } from './mail.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 const hm = (min) => `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}`;
@@ -109,11 +110,53 @@ export function addTrip(r, duty, replaceKey) {
   m.log.push({ id, kind, text: kind === 'edit' ? `${was} → ${label(duty)} (${from})` : `${label(duty)} ${duty.fromMail ? 'mailden ' : ''}eklendi (${from})`, at: new Date().toISOString() });
 }
 
+/**
+ * Delay (or earlier departure): leg `li` now leaves at newDate/newDep (local time there). That leg and
+ * the legs right after it that are only a short stop away (< 4 h on the ground) move by the same
+ * amount; legs after a layover keep their times. `moveReport`: sign-in moves too (first leg only).
+ * Returns the delay in minutes, or null.
+ */
+export function delayTrip(r, key, li, newDate, newDep, id, moveReport = true) {
+  const old = dutyOfTrip(r, key);
+  if (!old || !old.legs[li]) return null;
+  const L = old.legs;
+  const depU = L.map((l) => utcOf(l.from, l.depDate, l.dep));
+  const arrU = L.map((l) => utcOf(l.to, l.arrDate, l.arr));
+  const delta = utcOf(L[li].from, newDate, newDep) - depU[li];
+  if (!delta) return 0;
+  let last = li;
+  while (L[last + 1] && depU[last + 1] - arrU[last] < 240 * 60000) last++;
+  const d = structuredClone(old);
+  d.manualId = id; d.delayOf = old.manualId || true;
+  for (let i = li; i <= last; i++) {
+    const a = localAt(L[i].from, depU[i] + delta), b = localAt(L[i].to, arrU[i] + delta);
+    if (!a || !b) return null;
+    Object.assign(d.legs[i], { depDate: a.date, dep: a.time, arrDate: b.date, arr: b.time });
+  }
+  const shift = (stamp, code) => { if (!stamp) return stamp; const x = localAt(code, utcOf(code, stamp.slice(0, 10), stamp.slice(11, 16)) + delta); return x ? `${x.date}T${x.time}` : stamp; };
+  if (li === 0 && moveReport) { d.report = shift(old.report, L[0].from); d.start = shift(old.start, L[0].from); }
+  if (last === L.length - 1) d.end = shift(old.end, L[L.length - 1].to);
+  // ground times at the stations after the moved legs
+  const nd = d.legs.map((l) => utcOf(l.from, l.depDate, l.dep)), na = d.legs.map((l) => utcOf(l.to, l.arrDate, l.arr));
+  d.layovers = d.layovers.map((y) => {
+    const i = d.legs.findIndex((l, j) => l.to === y.station && d.legs[j + 1]?.from === y.station);
+    return i < 0 ? y : { ...y, rest: hm((nd[i + 1] - na[i]) / 60000) };
+  });
+  const m = book(r);
+  r.duties.splice(r.duties.indexOf(old), 1);
+  m.removed.push({ by: id, duty: old });
+  r.duties.push(d);
+  sortDuties(r);
+  const sign = delta > 0 ? 'rötar' : 'erken kalkış';
+  m.log.push({ id, kind: 'delay', text: `${L[li].flight} ${sign}: ${L[li].dep} → ${d.legs[li].dep} (${L[li].from}, ${d.legs[li].depDate})`, at: new Date().toISOString() });
+  return delta / 60000;
+}
+
 export function cancelTrip(r, key, id) {
   const m = book(r);
   const old = dutyOfTrip(r, key);
   if (!old) return false;
-  if (old.manual) { undo(r, old.manualId); return true; } // a hand-made trip is simply removed
+  if (old.manual && !old.delayOf) { undo(r, old.manualId); return true; } // a hand-made trip is simply removed
   r.duties.splice(r.duties.indexOf(old), 1);
   m.removed.push({ by: id, duty: old });
   m.log.push({ id, kind: 'cancel', text: `${label(old)} iptal (${old.legs[0].depDate})`, at: new Date().toISOString() });
@@ -124,6 +167,8 @@ export function cancelTrip(r, key, id) {
 export function undo(r, id) {
   const m = r.manual;
   if (!m) return;
+  // changes made on top of this one (e.g. a delay on a trip added from a mail) go first
+  for (const x of m.removed.filter((x) => x.duty.manualId === id && x.by !== id)) undo(r, x.by);
   r.duties = r.duties.filter((d) => d.manualId !== id);
   for (const x of m.removed.filter((x) => x.by === id)) r.duties.push(x.duty);
   m.removed = m.removed.filter((x) => x.by !== id);

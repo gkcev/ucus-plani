@@ -1,6 +1,6 @@
 import { parseRoster } from './parser.js';
 import { city, toTurkey, TZ, CITY } from './stations.js';
-import { buildTrip, formFromTrip, addTrip, cancelTrip, undo, resolveStation, knownZone } from './manual.js';
+import { buildTrip, formFromTrip, addTrip, cancelTrip, undo, resolveStation, knownZone, delayTrip } from './manual.js';
 import { driveTime, currentPosition } from './traffic.js';
 import { parseMail, buildMailTrip } from './mail.js';
 import {
@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -542,9 +542,11 @@ function renderHero() {
         if (next.drive) return `<p class="drive-note">Evden çıkış = ${leaveFormula(next)} (elle girildi)</p>${mealBtn(next)}`;
         return `<p class="drive-note">Evden çıkış = ${leaveFormula(next)}. ${trafficReady() ? 'Gerçek yol süresi uçuştan 48 saat önce trafikten hesaplanır.' : 'Maps\'teki yol süresini yazarsan ya da ⚙️ Ayarlar\'dan trafik servisini açarsan gerçek yol süresi kullanılır.'}</p>${mealBtn(next)}`;
       })()}
-      ${trafficReady() && !bigTraffic ? trafficBtnHtml() : ''}` : ''}`;
+      ${trafficReady() && !bigTraffic ? trafficBtnHtml() : ''}` : ''}
+    <button class="maps-btn on-dark" data-delay="${esc(next.key)}">⏱ Rötar var: saati değiştir</button>`;
   el.onclick = (e) => {
     if (e.target.closest('[data-traffic]')) return refreshTraffic(next);
+    if (e.target.closest('[data-delay]')) return;
     // a click on the label is passed on to the checkbox by the browser; act once, on the checkbox
     if (e.target.closest('.meal-chk') && !e.target.matches('[data-meal]')) return;
     const mb = e.target.closest('[data-meal]');
@@ -602,7 +604,7 @@ function renderTrips(r) {
   const T = trips(r, settings);
   $('#tripList').innerHTML = T.length ? T.map((t, i) => `
     <div class="trip${t.returnStamp && istDate(t.returnStamp) < now ? ' past' : ''}" data-trip="${i}" role="button" tabindex="0">
-      <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}${t.manual ? ` <span class="mpill">${t.fromMail ? '📧 mailden' : '✏️ elle girildi'}</span>` : ''}</h4>
+      <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}${t.manual ? ` <span class="mpill">${t.fromMail ? '📧 mailden' : '✏️ elle girildi'}</span>` : ''}${t.delayOf ? ' <span class="mpill">⏱ rötar</span>' : ''}</h4>
       <div class="legs">${legsHtml(t)}</div>
     </div>`).join('') : '<p class="footnote">Bu ay uçuş yok.</p>';
   $('#tripList')._trips = T;
@@ -691,6 +693,7 @@ function tripHtml(t) {
     <div class="card manual-actions"><h3>Değişiklik mi var?</h3>
       <p class="muted" style="margin:0 0 10px;font-size:13.5px">Mail ya da telefonla saat/uçuş değiştiyse ya da uçuş iptal olduysa buradan düzelt.</p>
       <button class="btn block primary" data-mail-add style="margin-bottom:8px">📧 Değişiklik mailini ekle</button>
+      <button class="btn block" data-delay="${esc(t.key)}" style="margin-bottom:8px">⏱ Rötar var: kalkış saatini değiştir</button>
       ${t.legs.length === 2 ? `<button class="btn block" data-manual-edit="${esc(t.key)}">✏️ Uçuşu düzenle</button>` : ''}
       <button class="btn block danger" data-manual-cancel="${esc(t.key)}" style="margin-top:8px">✖ Uçuş iptal oldu</button>
     </div>`;
@@ -807,7 +810,7 @@ function openSettings() {
     </div>
     ${(() => {
       const items = ks.flatMap((k) => (rosters[k].manual?.log || []).map((x) => ({ ...x, k })));
-      return items.length ? `<div class="card"><h3>Elle yapılan değişiklikler</h3>${items.map((x) => `<div class="month-row"><span>${x.kind === 'cancel' ? '✖' : '✏️'} ${esc(x.text)}</span><button class="link-btn" data-undo="${esc(x.k)}|${esc(x.id)}">Geri al</button></div>`).join('')}
+      return items.length ? `<div class="card"><h3>Elle yapılan değişiklikler</h3>${items.map((x) => `<div class="month-row"><span>${x.kind === 'cancel' ? '✖' : x.kind === 'delay' ? '⏱' : '✏️'} ${esc(x.text)}</span><button class="link-btn" data-undo="${esc(x.k)}|${esc(x.id)}">Geri al</button></div>`).join('')}
         <p class="footnote" style="margin:6px 0 0">Ayın yeni PDF'i yüklenirse bunlar silinir, PDF esas alınır.</p></div>` : '';
     })()}
     ${ks.length ? `<div class="card"><h3>Yüklü aylar</h3>${ks.map((k) => `<div class="month-row"><span>${esc(monthName(k))}</span><button class="link-btn" data-del="${k}">Sil</button></div>`).join('')}</div>` : ''}
@@ -1000,6 +1003,56 @@ function saveMail() {
   if (last) afterManual(last, n > 1 ? `${n} görev mailden eklendi` : 'Mailden eklendi');
 }
 
+// ---------- delay: new departure time for one leg ----------
+function delayForm(key, li = 0) {
+  const r = rosterOfTrip(key);
+  const t = r && trips(r, settings).find((x) => x.key === key);
+  if (!t) return;
+  const l = t.legs[li];
+  openSheet(`<h2>⏱ Rötar / yeni kalkış saati</h2>
+    <form id="delayForm" class="mform" data-key="${esc(key)}" autocomplete="off">
+      <div class="card">
+        ${t.legs.length > 1 ? `<label class="dl-leg"><span>Hangi uçuş?</span><select name="leg">${t.legs.map((x, i) => `<option value="${i}"${i === li ? ' selected' : ''}>${esc(x.flight)} ${esc(city(x.from))} → ${esc(city(x.to))} · ${esc(dshort(x.depDate))} ${x.dep}</option>`).join('')}</select></label>` : '<input type="hidden" name="leg" value="0">'}
+        <p class="muted" style="margin:0 0 10px;font-size:13.5px">Şu anki kalkış: <b>${l.dep}</b> (${esc(l.from === HOME ? 'TR' : l.from)}) · ${esc(fmtShort(l.depDate))}</p>
+        <div class="mgrid">
+          <label><span>Yeni kalkış <small>(${esc(l.from === HOME ? 'TR' : 'oranın saati')})</small></span><input type="time" name="dep" value="${l.dep}" required></label>
+          <label><span>Tarih</span><input type="date" name="date" value="${l.depDate}" required></label>
+        </div>
+        ${li === 0 ? '<label class="dl-chk"><input type="checkbox" name="moveReport" checked> İmza saati de aynı kadar kaysın</label>' : ''}
+        <p id="delayPrev" class="leave-prev" style="font-size:15px;margin-top:10px"></p>
+      </div>
+      <p class="footnote">İniş saati de aynı kadar kayar. Hemen arkasından gelen aktarma uçuşları (4 saatten kısa bekleme) da kayar; otelde kalınan yerden sonraki uçuşlar değişmez. Ayarlar'dan geri alınabilir.</p>
+      <button class="btn primary block" type="submit">Kaydet</button>
+    </form>`);
+  const f = $('#delayForm');
+  const prev = () => {
+    const fd = new FormData(f);
+    const i = +fd.get('leg');
+    if (i !== li) return delayForm(key, i);
+    const x = t.legs[i];
+    const trMs = (date, time) => { const v = (x.from !== HOME && toTurkey(x.from, date, time)) || { date, time }; return Date.parse(`${v.date}T${v.time}:00+03:00`); };
+    const d = Math.round((trMs(fd.get('date'), fd.get('dep')) - trMs(x.depDate, x.dep)) / 60000);
+    $('#delayPrev').innerHTML = !d ? 'Saat aynı.' : `<b>${d > 0 ? '+' : '−'}${esc(fmtDur(Math.abs(d)))} ${d > 0 ? 'rötar' : 'erken'}</b>`;
+  };
+  f.addEventListener('input', prev);
+  f.addEventListener('change', (e) => { if (e.target.name === 'leg') prev(); });
+  prev();
+}
+
+document.addEventListener('submit', (e) => {
+  if (e.target.id !== 'delayForm') return;
+  e.preventDefault();
+  const key = e.target.dataset.key;
+  const fd = new FormData(e.target);
+  const r = rosterOfTrip(key);
+  if (!r) return toast('Uçuş bulunamadı');
+  const i = +fd.get('leg');
+  const min = delayTrip(r, key, i, fd.get('date'), fd.get('dep'), `m${Date.now()}`, i === 0 ? fd.get('moveReport') === 'on' : false);
+  if (min == null) return toast('Saat değiştirilemedi');
+  if (!min) return toast('Saat aynı, değişiklik yok');
+  afterManual(r, `${min > 0 ? '+' : '−'}${fmtDur(Math.abs(min))} ${min > 0 ? 'rötar' : 'erken kalkış'} kaydedildi`);
+});
+
 function afterManual(r, msg) {
   store.set('rosters', rosters);
   viewKey = r.period.key;
@@ -1015,6 +1068,8 @@ function afterManual(r, msg) {
 
 document.addEventListener('click', (e) => {
   if (e.target.closest('[data-mail-add]')) return mailForm();
+  const dl = e.target.closest('[data-delay]');
+  if (dl) return delayForm(dl.dataset.delay);
   if (e.target.id === 'mailSave') return saveMail();
   const add = e.target.closest('[data-manual-add]');
   if (add) {
