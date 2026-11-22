@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -636,6 +636,17 @@ function legsHtml(t) {
     </div>`).join('');
 }
 
+// Turkish locative: Denver'da, Beyrut'ta, Hong Kong'da, Berlin'de
+const IN_CITY = { 'Seul': "Seul'de", 'Los Angeles': "Los Angeles'ta", 'San Francisco': "San Francisco'da" };
+function inCity(name) {
+  if (IN_CITY[name]) return IN_CITY[name];
+  const w = name.toLocaleLowerCase('tr');
+  const v = (/er$/.test(w) ? 'a' : (w.match(/[aeıioöuü](?=[^aeıioöuü]*$)/) || ['a'])[0]);
+  const back = 'aıou'.includes(v);
+  const hard = /[fstkçşhp]$/.test(w);
+  return `${name}'${hard ? 't' : 'd'}${back ? 'a' : 'e'}`;
+}
+
 function tripHtml(t) {
   const steps = [];
   if (t.leave) steps.push({ t: t.leave.slice(11), z: 'TR', d: 'Evden çıkış', s: leaveFormula(t, true), hl: true });
@@ -672,12 +683,8 @@ function tripHtml(t) {
           <ul class="timeline">${g.items.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}${s.z ? Z(s.z) : ''}${s.tr ? `<i class="trt">${esc(s.tr)}</i>` : ''}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul></div>`).join('');
       })()}
     </div>
-    ${t.stays.length ? `<div class="card"><h3>Orada kalış</h3>${t.stays.map((x) => {
-      const inL = t.legs.find((l) => l.to === x.station), outL = t.legs[t.legs.indexOf(inL) + 1];
-      return `<div class="dest"><span class="name">${esc(city(x.station))}${x.transit ? '<small>aktarma</small>' : ''}</span>
-        <span class="val"><b>${esc(fmtDur(x.min, { days: true }))}</b>${x.min >= 1440 ? ` <small class="muted">(${fmtHM(x.min)} sa)</small>` : ''}</span>
-        <span class="muted" style="grid-column:1/-1;font-size:13px">İniş ${esc(fmtShort(inL.arrDate))} ${inL.arr} → kalkış ${esc(fmtShort(outL.depDate))} ${outL.dep} (${esc(x.station)})</span></div>`;
-    }).join('')}</div>` : ''}
+    ${t.stays.length ? `<div class="card stays">${t.stays.map((x) => `
+      <p class="stay-line">${esc(inCity(city(x.station)))} ${x.transit ? 'aktarma' : 'kalış süresi'} <b>${esc(fmtDur(x.min, { days: true }))}</b>${x.min >= 1440 ? ` <span class="muted">(${fmtHM(x.min)} sa)</span>` : ''}</p>`).join('')}</div>` : ''}
     ${hotels ? `<div class="card"><h3>Konaklama</h3>${hotels}</div>` : ''}
     ${t.crew?.length ? `<div class="card"><h3>Kokpit ekibi</h3><div class="chips">${t.crew.map((c) => `<span class="chip">${esc(niceName(c.replace(/\s*\(.*\)$/, '')))} <small>${esc((c.match(/\((.*)\)$/) || [])[1] || '')}</small></span>`).join('')}</div></div>` : ''}
     ${t.restUntil ? `<p class="footnote">Dinlenme bitişi: ${esc(fmtShort(t.restUntil.slice(0, 10)))} ${t.restUntil.slice(11)}</p>` : ''}

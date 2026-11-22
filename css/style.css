@@ -392,3 +392,6 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .trip .legs { margin: 6px 0 0; padding: 0 2px; border-top: 1px solid var(--line); }
 .trip .legs .leg { padding: 8px 0; }
 .trip .legs .leg .ap b { font-size: 17px; }
+.card.stays { padding-top: 12px; padding-bottom: 12px; }
+.stay-line { margin: 4px 0; font-size: 15px; }
+.stay-line b { font-size: 16px; }
