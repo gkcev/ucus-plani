@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -265,7 +265,7 @@ function renderStats(r) {
       ${all.length > 1 ? `<div class="months">${all.map((m) => `
         <button class="col${m.key === viewKey ? ' cur' : ''}" data-month="${m.key}" title="${esc(monthName(m.key))}: ${fmtHM(m.flightMin)}">
           <span class="v">${fmtHM(m.flightMin)}</span>
-          <i style="height:${Math.max(2, pct(m.flightMin, maxFlight))}%"></i>
+          <i style="height:${Math.max(2, Math.round(pct(m.flightMin, maxFlight) * 0.8))}px"></i>
           <span class="m">${esc(SHORT_MONTH.format(new Date(m.key + '-15T12:00:00Z')))}</span>
         </button>`).join('')}</div>` : '<p class="muted" style="margin:0 0 6px">Başka ayların PDF\'lerini yükledikçe burada karşılaştırma görünür.</p>'}
       <table class="mtable">
@@ -339,7 +339,7 @@ function renderAllStats() {
       <div class="months${y.months.length > 6 ? ' many' : ''}">${y.months.map((m) => `
         <button class="col" data-month="${m.key}" title="${esc(monthName(m.key))}: ${fmtHM(m.flightMin)}">
           <span class="v">${y.months.length > 6 ? Math.round(m.flightMin / 60) : fmtHM(m.flightMin)}</span>
-          <i style="height:${Math.max(2, pct(m.flightMin, maxFlight))}%"></i>
+          <i style="height:${Math.max(2, Math.round(pct(m.flightMin, maxFlight) * 0.8))}px"></i>
           <span class="m">${esc(SHORT_MONTH.format(new Date(m.key + '-15T12:00:00Z')))}</span>
         </button>`).join('')}</div>
       ${y.months.length > 6 ? '<p class="footnote" style="margin:4px 0 0">Sütun üstündeki sayılar saat.</p>' : ''}

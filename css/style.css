@@ -281,10 +281,10 @@ main { max-width: 720px; margin: 0 auto; padding: 16px; }
 .limit.warn .meter i { background: #d97706; }
 .limit .note { font-size: 12px; color: #b45309; margin-top: 3px; }
 
-.months { display: flex; align-items: flex-end; gap: 8px; height: 140px; padding-top: 18px; }
-.months .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; cursor: pointer; border: 0; background: none; padding: 0; }
+.months { display: flex; align-items: flex-end; gap: 8px; height: 140px; padding-top: 10px; overflow: hidden; }
+.months .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; cursor: pointer; border: 0; background: none; padding: 0; }
 .months .col .v { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--muted); }
-.months .col i { display: block; width: 100%; max-width: 36px; background: var(--s1); border-radius: 4px 4px 0 0; min-height: 2px; }
+.months .col i { display: block; flex: none; width: 100%; max-width: 36px; background: var(--s1); border-radius: 4px 4px 0 0; min-height: 2px; }
 .months .col.cur i { background: var(--navy); }
 @media (prefers-color-scheme: dark) { .months .col.cur i { background: #9ec5f4; } }
 .months .col .m { font-size: 11.5px; color: var(--muted); }
