@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -603,7 +603,7 @@ function renderTrips(r) {
   $('#tripList').innerHTML = T.length ? T.map((t, i) => `
     <div class="trip${t.returnStamp && istDate(t.returnStamp) < now ? ' past' : ''}" data-trip="${i}" role="button" tabindex="0">
       <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}${t.manual ? ` <span class="mpill">${t.fromMail ? '📧 mailden' : '✏️ elle girildi'}</span>` : ''}</h4>
-      <p class="dates">${esc(fmtShort(t.first.depDate))} → ${esc(fmtShort(t.last.arrDate))} · ${esc(t.legs.map((l) => l.flight).join(', '))}</p>
+      <div class="legs">${legsHtml(t)}</div>
       <div class="row">
         ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b>${Z('TR')}</span>` : ''}
         ${t.first.from === HOME ? `<span>İmza <b>${t.reportStamp.slice(11)}</b>${Z('TR')}</span>` : ''}
@@ -635,13 +635,17 @@ function apHtml(cls, code, date, time, kind) {
   return `<div class="ap${cls}"><b>${x.big}${Z(x.z)}</b><span>${esc(city(code))} · ${esc(fmtShort(x.date))}</span><i class="trt">${esc(x.small)}</i></div>`;
 }
 
-function tripHtml(t) {
-  const legs = t.legs.map((l) => `
+function legsHtml(t) {
+  return t.legs.map((l) => `
     <div class="leg">
       ${apHtml('', l.from, l.depDate, l.dep, 'dep')}
       <div class="mid"><b>${esc(l.flight)}</b>✈</div>
       ${apHtml(' r', l.to, l.arrDate, l.arr, 'arr')}
     </div>`).join('');
+}
+
+function tripHtml(t) {
+  const legs = legsHtml(t);
   const steps = [];
   if (t.leave) steps.push({ t: t.leave.slice(11), z: 'TR', d: 'Evden çıkış', s: leaveFormula(t, true), hl: true });
   if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), z: 'TR', d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
