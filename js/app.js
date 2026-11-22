@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -604,14 +604,6 @@ function renderTrips(r) {
     <div class="trip${t.returnStamp && istDate(t.returnStamp) < now ? ' past' : ''}" data-trip="${i}" role="button" tabindex="0">
       <h4>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}${t.manual ? ` <span class="mpill">${t.fromMail ? '📧 mailden' : '✏️ elle girildi'}</span>` : ''}</h4>
       <div class="legs">${legsHtml(t)}</div>
-      <div class="row">
-        ${t.leave ? `<span>Evden çıkış <b>${t.leave.slice(11)}</b>${Z('TR')}</span>` : ''}
-        ${t.first.from === HOME ? `<span>İmza <b>${t.reportStamp.slice(11)}</b>${Z('TR')}</span>` : ''}
-        <span>Kalkış <b>${t.first.dep}</b>${Z(t.first.from === HOME ? 'TR' : t.first.from)}</span>
-        ${(() => { const a = firstArrival(t); return a ? `<span class="arr-cell"><span>${esc(city(a.leg.to))} iniş <b>${a.leg.arr}</b>${Z(a.leg.to)}</span><i class="trt">${a.tr.time} (TR)${a.tr.date !== a.leg.arrDate ? ' · ' + esc(dshort(a.tr.date)) : ''}</i></span>` : ''; })()}
-        ${t.returnStamp ? `<span>Eve iniş <b>${t.returnStamp.slice(11)}</b>${Z('TR')} <b class="ret-date">${esc(fmtShort(t.returnStamp.slice(0, 10)))}</b></span>` : ''}
-      </div>
-      ${t.stays.some((x) => !x.transit) ? `<div class="row stay">${t.stays.filter((x) => !x.transit).map((x) => `<span>📍 ${esc(city(x.station))} kalış: <b>${esc(fmtDur(x.min, { days: true }))}</b></span>`).join('')}</div>` : ''}
     </div>`).join('') : '<p class="footnote">Bu ay uçuş yok.</p>';
   $('#tripList')._trips = T;
 }
@@ -645,7 +637,6 @@ function legsHtml(t) {
 }
 
 function tripHtml(t) {
-  const legs = legsHtml(t);
   const steps = [];
   if (t.leave) steps.push({ t: t.leave.slice(11), z: 'TR', d: 'Evden çıkış', s: leaveFormula(t, true), hl: true });
   if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), z: 'TR', d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
@@ -667,7 +658,6 @@ function tripHtml(t) {
   return `
     <h2>✈ ${esc(t.title)}${t.cargo ? ' <span class="kpill">K · kargo</span>' : ''}</h2>
     ${t.manual ? `<p class="mnote">${t.fromMail ? '📧 Bu uçuş değişiklik mailinden eklendi.' : '✏️ Bu uçuş telefonla gelen bilgiye göre elle girildi.'}</p>` : ''}
-    ${t.first.from === HOME ? `<div style="margin-bottom:12px">${mapsLink('maps-btn block')}</div>` : ''}
     <div class="card"><h3>Özet</h3>
       ${(() => {
         // group consecutive steps by where they happen: Turkey (pink) / abroad (light blue)
@@ -688,7 +678,6 @@ function tripHtml(t) {
         <span class="val"><b>${esc(fmtDur(x.min, { days: true }))}</b>${x.min >= 1440 ? ` <small class="muted">(${fmtHM(x.min)} sa)</small>` : ''}</span>
         <span class="muted" style="grid-column:1/-1;font-size:13px">İniş ${esc(fmtShort(inL.arrDate))} ${inL.arr} → kalkış ${esc(fmtShort(outL.depDate))} ${outL.dep} (${esc(x.station)})</span></div>`;
     }).join('')}</div>` : ''}
-    <div class="card"><h3>Uçuşlar</h3>${legs}</div>
     ${hotels ? `<div class="card"><h3>Konaklama</h3>${hotels}</div>` : ''}
     ${t.crew?.length ? `<div class="card"><h3>Kokpit ekibi</h3><div class="chips">${t.crew.map((c) => `<span class="chip">${esc(niceName(c.replace(/\s*\(.*\)$/, '')))} <small>${esc((c.match(/\((.*)\)$/) || [])[1] || '')}</small></span>`).join('')}</div></div>` : ''}
     ${t.restUntil ? `<p class="footnote">Dinlenme bitişi: ${esc(fmtShort(t.restUntil.slice(0, 10)))} ${t.restUntil.slice(11)}</p>` : ''}
