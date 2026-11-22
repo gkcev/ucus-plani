@@ -388,3 +388,4 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .traffic-big .tb-btns .tb-btn { justify-content: center; }
 .tb-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border-radius: 10px; border: 0; background: rgba(255,255,255,.16); color: #fff; font: inherit; font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer; }
 .tb-btn:active { background: rgba(255,255,255,.26); }
+.hero .arr-tr .arr-t { display: inline-block; vertical-align: top; }
