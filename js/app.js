@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 44;
+const APP_VERSION = 45;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -651,16 +651,16 @@ function inCity(name) {
 
 function tripHtml(t) {
   const steps = [];
-  if (t.leave) steps.push({ t: t.leave.slice(11), z: 'TR', d: 'Evden çıkış', s: leaveFormula(t, true), hl: true });
-  if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), z: 'TR', d: 'İmza (mesai başlangıcı)', s: 'Havalimanında brifing' });
+  if (t.leave) steps.push({ t: t.leave.slice(11), z: 'TR', d: 'Evden çıkış', hl: true });
+  if (t.first.from === HOME) steps.push({ t: t.reportStamp.slice(11), z: 'TR', d: 'İmza (mesai başlangıcı)' });
   t.legs.forEach((l, i) => {
     const dep = dual(l.from, l.depDate, l.dep, 'dep');
-    if (dep) steps.push({ t: dep.big, z: dep.z, tr: dep.small.split(' · ')[0], p: l.from, d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${l.flight} · ${fmtShort(dep.tr.date)} (TR) · ${fmtShort(l.depDate)} (${l.from})` });
-    else if (i === 0) steps.push({ t: l.dep, z: 'TR', d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: l.flight });
+    if (dep) steps.push({ t: dep.big, z: dep.z, tr: dep.small.split(' · ')[0], p: l.from, f: l.flight, d: `Kalkış: ${city(l.from)} → ${city(l.to)}`, s: `${fmtShort(dep.tr.date)} (TR) · ${fmtShort(l.depDate)} (${l.from})` });
+    else if (i === 0) steps.push({ t: l.dep, z: 'TR', f: l.flight, d: `Kalkış: ${city(l.from)} → ${city(l.to)}` });
     const arr = dual(l.to, l.arrDate, l.arr, 'arr');
-    if (arr) steps.push({ t: arr.big, z: arr.z, tr: arr.small.split(' · ')[0], p: l.to, d: `İniş: ${city(l.to)}`, s: `${l.flight} · ${fmtShort(l.arrDate)} (${l.to}) · ${fmtShort(arr.tr.date)} (TR)` });
+    if (arr) steps.push({ t: arr.big, z: arr.z, tr: arr.small.split(' · ')[0], p: l.to, f: l.flight, d: `İniş: ${city(l.to)}`, s: `${fmtShort(l.arrDate)} (${l.to}) · ${fmtShort(arr.tr.date)} (TR)` });
   });
-  if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), z: 'TR', d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}`, s: t.last.flight });
+  if (t.returnStamp) steps.push({ t: t.returnStamp.slice(11), z: 'TR', f: t.last.flight, d: `İstanbul'a iniş · ${fmtShort(t.returnStamp.slice(0, 10))}` });
   const hotels = t.layovers.map((y) => `
     <dl class="kv">
       <dt>Şehir</dt><dd>${esc(city(y.station))} (${esc(y.station)})</dd>
@@ -682,7 +682,7 @@ function tripHtml(t) {
         }
         return groups.map((g) => `<div class="tl-grp ${g.place === HOME ? 'g-tr' : 'g-abroad'}">
           <span class="tl-tag">${g.place === HOME ? 'Türkiye' : esc(city(g.place))}</span>
-          <ul class="timeline">${g.items.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}${s.z ? Z(s.z) : ''}${s.tr ? `<i class="trt">${esc(s.tr)}</i>` : ''}</span><span class="d">${esc(s.d)}<small>${esc(s.s || '')}</small></span></li>`).join('')}</ul></div>`).join('');
+          <ul class="timeline">${g.items.map((s) => `<li class="${s.hl ? 'hl' : ''}"><span class="t">${s.t}${s.z ? Z(s.z) : ''}${s.tr ? `<i class="trt">${esc(s.tr)}</i>` : ''}</span><span class="d">${s.f ? `<b class="fno">${esc(s.f)}</b> ` : ''}${esc(s.d)}${s.s ? `<small>${esc(s.s)}</small>` : ''}</span></li>`).join('')}</ul></div>`).join('');
       })()}
     </div>
     ${t.stays.length ? `<div class="card stays">${t.stays.map((x) => `

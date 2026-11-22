@@ -399,3 +399,4 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .dl-leg select { font: inherit; font-size: 15px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; width: 100%; }
 .dl-chk { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 15px; font-weight: 600; color: var(--text); }
 .dl-chk input { width: 22px; height: 22px; accent-color: #22a447; margin: 0; }
+.timeline .d .fno { font-weight: 800; }
