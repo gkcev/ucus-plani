@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -397,13 +397,14 @@ function setTrafficBtn(state, msg) {
   if (state === 'done' || state === 'error') setTrafficBtn._t = setTimeout(() => { trafficBtn = { state: 'idle' }; renderHero(); }, 4000);
   renderHero();
 }
-function trafficBtnHtml() {
+function trafficBtnHtml(small = false) {
   const s = trafficBtn.state;
-  const label = s === 'busy' ? '⏳ Hesaplanıyor…'
-    : s === 'done' ? '✓ Güncellendi'
-    : s === 'error' ? `⚠️ ${esc(trafficBtn.msg || 'Güncellenemedi')}`
-    : '🔄 Trafiği şimdi hesapla';
-  return `<button class="maps-btn on-dark traffic-btn is-${s}" data-traffic ${s === 'busy' ? 'disabled' : ''} aria-live="polite">${label}</button>`;
+  const label = s === 'busy' ? (small ? '⏳ …' : '⏳ Hesaplanıyor…')
+    : s === 'done' ? (small ? '✓ Tamam' : '✓ Güncellendi')
+    : s === 'error' ? (small ? '⚠️ Hata' : `⚠️ ${esc(trafficBtn.msg || 'Güncellenemedi')}`)
+    : (small ? '🔄 Hesapla' : '🔄 Trafiği şimdi hesapla');
+  const title = s === 'error' ? ` title="${esc(trafficBtn.msg || 'Güncellenemedi')}"` : '';
+  return `<button class="${small ? 'tb-btn' : 'maps-btn on-dark'} traffic-btn is-${s}" data-traffic${title} ${s === 'busy' ? 'disabled' : ''} aria-live="polite">${label}</button>`;
 }
 
 async function refreshTraffic(t, { quiet = false } = {}) {
@@ -417,7 +418,7 @@ async function refreshTraffic(t, { quiet = false } = {}) {
     setDrive(t.key, r.minutes, { src: 'traffic', delayMin: r.delayMin, km: r.km, mode: 'now' }, true);
     if (!quiet) setTrafficBtn('done');
   } catch (err) {
-    if (!quiet) setTrafficBtn('error', err.message);
+    if (!quiet) { setTrafficBtn('error', err.message); toast(err.message || 'Trafik güncellenemedi'); }
     else console.warn(err);
   } finally {
     trafficBusy = false;
@@ -505,6 +506,7 @@ function renderHero() {
     return;
   }
   const leaveAt = istDate(next.leave || next.depStamp);
+  const bigTraffic = next.first.from === HOME && !!next.drive && settings.driveMeta?.[next.key]?.src === 'traffic';
   el.innerHTML = `
     <p class="eyebrow">Sıradaki uçuş</p>
     <h2>${esc(next.title)}</h2>
@@ -515,9 +517,9 @@ function renderHero() {
       <div class="hero-cell"><small>Eve iniş${next.returnStamp ? ' · ' + esc(fmtShort(next.returnStamp.slice(0, 10)).replace(/ \S+$/, '')) : ''}</small><b>${next.returnStamp ? next.returnStamp.slice(11) + Z('TR') : '–'}</b></div>
     </div>
     ${(() => { const a = firstArrival(next); return a ? `<p class="arr-tr">🛬 ${esc(city(a.leg.to))} iniş: <b>${a.leg.arr}</b>${Z(a.leg.to)}${a.leg.arrDate !== next.first.depDate ? ` <small class="muted">${esc(dshort(a.leg.arrDate))}</small>` : ''}<i class="trt">${a.tr.time} (TR)${a.tr.date !== a.leg.arrDate ? ' · ' + esc(dshort(a.tr.date)) : ''}</i></p>` : ''; })()}
-    <p class="countdown">${leaveAt > now ? `Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.` : `Evden çıkış saati geçti (${esc(relative(leaveAt, now))}).${next.reportStamp && istDate(next.reportStamp) > now ? ` İmzaya ${esc(relative(istDate(next.reportStamp), now).replace(' sonra', ''))} var.` : ''}`}${next.returnStamp ? ` Dönüş: ${esc(fmtDay(next.returnStamp.slice(0, 10)))}.` : ''}</p>
+    <p class="countdown">${leaveAt > now ? `Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.` : `Evden çıkış saati geçti (${esc(relative(leaveAt, now))}).${next.reportStamp && istDate(next.reportStamp) > now ? ` İmzaya ${esc(relative(istDate(next.reportStamp), now).replace(' sonra', ''))} var.` : ''}`}</p>
     ${next.first.from === HOME ? `
-      ${mapsLink('maps-btn on-dark')}
+      ${bigTraffic ? '' : mapsLink('maps-btn on-dark')}
       ${trafficReady() ? '' : `<form class="drive" data-key="${esc(next.key)}">
         <label><span>Maps'teki yol süresi
           </span><input type="number" inputmode="numeric" min="5" max="300" step="1" placeholder="örn. 60" value="${next.drive || ''}" aria-label="Yol süresi, dakika">
@@ -533,14 +535,14 @@ function renderHero() {
           return `<div class="traffic-big">
             <span class="tb-icon" aria-hidden="true">🚦</span>
             <div><small>Şu anki trafik</small><b class="cg-${lv.k}">${next.drive} dk</b></div>
-            <span class="tb-meta"><span class="cg-tag cg-${lv.k}">${lv.icon} ${lv.label}</span><br>${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : ''}güncelleme ${hhmm(meta.at)}</span>
+            <span class="tb-meta"><span class="tb-btns"><a class="tb-btn" href="${MAPS_URL}" target="_blank" rel="noopener" data-maps>🗺️ Harita</a>${trafficBtnHtml(true)}</span>${meta.delayMin ? `+${meta.delayMin} dk yoğunluk<br>` : ''}güncelleme ${hhmm(meta.at)}</span>
           </div>
           <p class="drive-note">Evden çıkış = ${leaveFormula(next)}</p>${mealBtn(next)}`;
         }
         if (next.drive) return `<p class="drive-note">Evden çıkış = ${leaveFormula(next)} (elle girildi)</p>${mealBtn(next)}`;
         return `<p class="drive-note">Evden çıkış = ${leaveFormula(next)}. ${trafficReady() ? 'Gerçek yol süresi uçuştan 48 saat önce trafikten hesaplanır.' : 'Maps\'teki yol süresini yazarsan ya da ⚙️ Ayarlar\'dan trafik servisini açarsan gerçek yol süresi kullanılır.'}</p>${mealBtn(next)}`;
       })()}
-      ${trafficReady() ? trafficBtnHtml() : ''}` : ''}`;
+      ${trafficReady() && !bigTraffic ? trafficBtnHtml() : ''}` : ''}`;
   el.onclick = (e) => {
     if (e.target.closest('[data-traffic]')) return refreshTraffic(next);
     // a click on the label is passed on to the checkbox by the browser; act once, on the checkbox

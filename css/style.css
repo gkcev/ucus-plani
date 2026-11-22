@@ -381,3 +381,7 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .mrow .trt { display: inline; font-style: normal; }
 .mail-err { padding: 10px 12px; border-radius: 12px; background: var(--standby-bg); color: var(--text); font-size: 13.5px; }
 #mailText { width: 100%; font: 13px/1.4 ui-monospace, Menlo, monospace; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); box-sizing: border-box; }
+.traffic-big .tb-btns { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: 0 0 6px auto; width: max-content; }
+.traffic-big .tb-btns .tb-btn { justify-content: center; }
+.tb-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border-radius: 10px; border: 0; background: rgba(255,255,255,.16); color: #fff; font: inherit; font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.tb-btn:active { background: rgba(255,255,255,.26); }
