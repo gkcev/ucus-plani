@@ -2,7 +2,7 @@ import { parseRoster } from './parser.js';
 import { city, toTurkey, TZ, CITY } from './stations.js';
 import { buildTrip, formFromTrip, addTrip, cancelTrip, undo, resolveStation, knownZone, delayTrip } from './manual.js';
 import { driveTime, currentPosition } from './traffic.js';
-import { parseMail, buildMailTrip } from './mail.js';
+import { parseMail, buildMailTrip, localAt } from './mail.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
   monthStats, fmtDur, fmtHM, DRIVE_BUFFER_MIN, SIGNIN_BUFFER_MIN, MEAL_MIN, TRANSFER_MIN,
@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 46;
+const APP_VERSION = 47;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -516,7 +516,7 @@ function renderHero() {
       <div class="hero-cell"><small>Kalkış</small><b>${next.first.dep}${next.first.from === HOME ? Z('TR') : Z(next.first.from)}</b></div>
       <div class="hero-cell"><small>Eve iniş${next.returnStamp ? ' · ' + esc(fmtShort(next.returnStamp.slice(0, 10)).replace(/ \S+$/, '')) : ''}</small><b>${next.returnStamp ? next.returnStamp.slice(11) + Z('TR') : '–'}</b></div>
     </div>
-    ${(() => { const a = firstArrival(next); return a ? `<p class="arr-tr">🛬 ${esc(city(a.leg.to))} iniş: <span class="arr-t"><b>${a.leg.arr}</b>${Z(a.leg.to)}${a.leg.arrDate !== next.first.depDate ? ` <small class="muted">${esc(dshort(a.leg.arrDate))}</small>` : ''}<i class="trt">${a.tr.time} (TR)${a.tr.date !== a.leg.arrDate ? ' · ' + esc(dshort(a.tr.date)) : ''}</i></span></p>` : ''; })()}
+    ${(() => { const a = firstArrival(next); return a ? `<p class="arr-tr">🛬 ${esc(city(a.leg.to))} iniş: <span class="arr-t"><b>${a.leg.arr}</b>${Z(a.leg.to)}${a.leg.arrDate !== next.first.depDate ? ` <small class="muted">${esc(dshort(a.leg.arrDate))}</small>` : ''}<i class="trt">${a.tr.time} (TR)${a.tr.date !== a.leg.arrDate ? ' · ' + esc(dshort(a.tr.date)) : ''}</i></span>${(() => { const n = a.leg.to !== HOME && localAt(a.leg.to, Date.now()); return n ? `<span class="now-local"><small>şu an</small><b>${n.time}</b></span>` : ''; })()}</p>` : ''; })()}
     <p class="countdown">${leaveAt > now ? `Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.` : `Evden çıkış saati geçti (${esc(relative(leaveAt, now))}).${next.reportStamp && istDate(next.reportStamp) > now ? ` İmzaya ${esc(relative(istDate(next.reportStamp), now).replace(' sonra', ''))} var.` : ''}`}</p>
     ${next.first.from === HOME ? `
       ${bigTraffic ? '' : mapsLink('maps-btn on-dark')}
