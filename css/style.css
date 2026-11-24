@@ -402,6 +402,7 @@ table.mtable { width: 100%; border-collapse: collapse; font-size: 13.5px; margin
 .timeline .d .fno { font-weight: 800; }
 .hero .arr-tr { display: flex; align-items: flex-start; gap: 4px; }
 .hero .arr-tr .arr-t { flex: none; }
-.hero .arr-tr .now-local { margin-left: auto; text-align: right; color: #fff; line-height: 1.15; }
-.hero .arr-tr .now-local small { display: block; font-size: 11.5px; opacity: .7; }
-.hero .arr-tr .now-local b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.hero-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.hero .now-local { flex: none; text-align: right; color: #fff; line-height: 1.1; padding-bottom: 2px; }
+.hero .now-local small { display: block; font-size: 11.5px; opacity: .7; letter-spacing: .04em; }
+.hero .now-local b { font-size: 22px; font-variant-numeric: tabular-nums; }

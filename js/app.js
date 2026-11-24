@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 47;
+const APP_VERSION = 48;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -508,15 +508,19 @@ function renderHero() {
   const leaveAt = istDate(next.leave || next.depStamp);
   const bigTraffic = next.first.from === HOME && !!next.drive && settings.driveMeta?.[next.key]?.src === 'traffic';
   el.innerHTML = `
-    <p class="eyebrow">Sıradaki uçuş</p>
-    <h2>${esc(next.title)}</h2>
+    <div class="hero-head"><div><p class="eyebrow">Sıradaki uçuş</p>
+    <h2>${esc(next.title)}</h2></div>${(() => {
+      const st = next.main;
+      const n = st && st !== HOME && localAt(st, Date.now());
+      return n ? `<span class="now-local"><small>${esc(st)} şu an</small><b>${n.time}</b></span>` : '';
+    })()}</div>
     <p class="when">${esc(fmtDay(next.first.depDate))} · ${esc(next.first.flight)}</p>
     <div class="hero-grid">
       <div class="hero-cell hl"><small>Evden çıkış</small><b>${next.leave ? next.leave.slice(11) + Z('TR') : '–'}</b></div>
       <div class="hero-cell"><small>Kalkış</small><b>${next.first.dep}${next.first.from === HOME ? Z('TR') : Z(next.first.from)}</b></div>
       <div class="hero-cell"><small>Eve iniş${next.returnStamp ? ' · ' + esc(fmtShort(next.returnStamp.slice(0, 10)).replace(/ \S+$/, '')) : ''}</small><b>${next.returnStamp ? next.returnStamp.slice(11) + Z('TR') : '–'}</b></div>
     </div>
-    ${(() => { const a = firstArrival(next); return a ? `<p class="arr-tr">🛬 ${esc(city(a.leg.to))} iniş: <span class="arr-t"><b>${a.leg.arr}</b>${Z(a.leg.to)}${a.leg.arrDate !== next.first.depDate ? ` <small class="muted">${esc(dshort(a.leg.arrDate))}</small>` : ''}<i class="trt">${a.tr.time} (TR)${a.tr.date !== a.leg.arrDate ? ' · ' + esc(dshort(a.tr.date)) : ''}</i></span>${(() => { const n = a.leg.to !== HOME && localAt(a.leg.to, Date.now()); return n ? `<span class="now-local"><small>şu an</small><b>${n.time}</b></span>` : ''; })()}</p>` : ''; })()}
+    ${(() => { const a = firstArrival(next); return a ? `<p class="arr-tr">🛬 ${esc(city(a.leg.to))} iniş: <span class="arr-t"><b>${a.leg.arr}</b>${Z(a.leg.to)}${a.leg.arrDate !== next.first.depDate ? ` <small class="muted">${esc(dshort(a.leg.arrDate))}</small>` : ''}<i class="trt">${a.tr.time} (TR)${a.tr.date !== a.leg.arrDate ? ' · ' + esc(dshort(a.tr.date)) : ''}</i></span></p>` : ''; })()}
     <p class="countdown">${leaveAt > now ? `Evden çıkışa ${esc(relative(leaveAt, now).replace(' sonra', ''))} var.` : `Evden çıkış saati geçti (${esc(relative(leaveAt, now))}).${next.reportStamp && istDate(next.reportStamp) > now ? ` İmzaya ${esc(relative(istDate(next.reportStamp), now).replace(' sonra', ''))} var.` : ''}`}</p>
     ${next.first.from === HOME ? `
       ${bigTraffic ? '' : mapsLink('maps-btn on-dark')}
