@@ -21,7 +21,7 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 48;
+const APP_VERSION = 49;
 let viewKey = null;
 let view = store.get('view', 'cal');
 let statScope = store.get('statScope', 'month');
@@ -465,7 +465,6 @@ function firstArrival(t) {
   return tr ? { leg: l, tr } : null;
 }
 // what time it is now at an airport
-const localNow = (code) => (TZ[code] ? new Intl.DateTimeFormat('tr-TR', { timeZone: TZ[code], hour: '2-digit', minute: '2-digit' }).format(new Date()) : '');
 
 // how the leave-home time was worked out, e.g. "imza 08:30 − 40 dk − yol 55 dk − 10 dk pay − 20 dk yemek"
 function leaveFormula(t, short) {
@@ -486,15 +485,19 @@ function renderHero() {
     const arrived = current.legs.filter((l) => l.arrDate <= now.toISOString().slice(0, 10)).pop();
     const loc = city(arrived?.to || current.main);
     el.innerHTML = `
-      <p class="eyebrow">Şu an görevde</p>
-      <h2>${esc(loc)}</h2>
+      <div class="hero-head"><div><p class="eyebrow">Şu an görevde</p>
+      <h2>${esc(loc)}</h2></div>${(() => {
+        const st = arrived?.to || current.main;
+        const n = st && st !== HOME && localAt(st, Date.now());
+        return n ? `<span class="now-local"><small>${esc(st)} şu an</small><b>${n.time}</b></span>` : '';
+      })()}</div>
       <p class="when">${esc(current.title)} · ${esc(current.legs.map((l) => l.flight).join(', '))}</p>
       <div class="hero-grid">
         <div class="hero-cell hl"><small>Türkiye'ye iniş</small><b>${current.returnStamp.slice(11)}${Z('TR')}</b></div>
         <div class="hero-cell"><small>Dönüş günü</small><b style="font-size:16px">${esc(fmtShort(current.returnStamp.slice(0, 10)))}</b></div>
         <div class="hero-cell"><small>Dönüş uçuşu</small><b style="font-size:15px">${esc(current.last.flight)}</b></div>
       </div>
-      <p class="countdown">${localNow(arrived?.to || current.main) && (arrived?.to || current.main) !== HOME ? `Oradaki saat (${esc(loc)}): <b>${localNow(arrived?.to || current.main)}</b> · ` : ''}İstanbul'a inişe ${esc(relative(istDate(current.returnStamp), now).replace(' sonra', ''))} var.</p>`;
+      <p class="countdown">İstanbul'a inişe ${esc(relative(istDate(current.returnStamp), now).replace(' sonra', ''))} var.</p>`;
     el.onclick = () => openTrip(current);
     return;
   }
