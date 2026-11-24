@@ -5,7 +5,7 @@ import { driveTime, currentPosition } from './traffic.js';
 import { parseMail, buildMailTrip, localAt } from './mail.js';
 import {
   buildDays, trips, istDate, fmtDay, fmtShort, relative, niceName, toICS, codeInfo, HOME, yearStats,
-  monthStats, fmtDur, fmtHM, DRIVE_BUFFER_MIN, SIGNIN_BUFFER_MIN, MEAL_MIN, TRANSFER_MIN,
+  monthStats, fmtDur, fmtHM, shiftStamp, DRIVE_BUFFER_MIN, SIGNIN_BUFFER_MIN, MEAL_MIN, TRANSFER_MIN,
 } from './model.js';
 
 // ---------- storage ----------
@@ -21,9 +21,10 @@ delete settings.leaveHours; // old setting (hours) replaced by leaveMin
 // the fixed 'leave X before departure' rule became one formula with an estimated drive time:
 // carry over whatever total had been chosen (passenger sign-in is 90 min before departure)
 if (settings.estDrive == null) settings.estDrive = Math.min(180, Math.max(10, (settings.leaveMin ?? 190) - 90 - settings.earlyMin - settings.transferMin - settings.bufferMin));
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 let viewKey = null;
 let view = store.get('view', 'cal');
+let spouse = store.get('spouse', false);
 let statScope = store.get('statScope', 'month');
 
 const $ = (s) => document.querySelector(s);
@@ -150,6 +151,9 @@ function render() {
   const r = rosters[viewKey];
   const p = r.person || {};
   $('#who').textContent = [niceName(p.name), p.fleet && `B${p.fleet}`, p.rank].filter(Boolean).join(' · ');
+  document.body.classList.toggle('spouse', spouse);
+  $('#spouseBtn').classList.toggle('on', spouse);
+  $('#spouseBtn').setAttribute('aria-pressed', spouse);
   renderHero();
   renderMonth(r);
   renderTrips(r);
@@ -162,6 +166,15 @@ function render() {
   $('#viewStats').hidden = view !== 'stats';
   if (view === 'stats') renderStats(r);
 }
+
+$('#spouseBtn').onclick = () => {
+  spouse = !spouse;
+  store.set('spouse', spouse);
+  if (spouse) { view = 'cal'; }
+  render();
+  window.scrollTo(0, 0);
+  toast(spouse ? 'Eşim için görünümü' : 'Normal görünüm');
+};
 
 document.querySelector('.tabs').addEventListener('click', (e) => {
   const t = e.target.closest('.tab');
@@ -474,11 +487,54 @@ function leaveFormula(t, short) {
 }
 const mealBtn = (t) => `<label class="meal-chk${t.meal ? ' on' : ''}"><input type="checkbox" data-meal="${esc(t.key)}"${t.meal ? ' checked' : ''}><span>🍽 Orada yemek yiyeceğim</span><small>${t.meal ? `${t.meal} dk erken çıkış` : `+${settings.mealMin} dk`}</small></label>`;
 
+// ---------- "Eşim için": the trip in Turkey time only, plus the local time where he is ----------
+const trAt = (code, date, time) => (code === HOME ? { date, time } : toTurkey(code, date, time) || { date, time });
+function spouseCard(el, T, now) {
+  el.className = 'hero spouse-card';
+  const t = T.find((x) => istDate(x.returnStamp || x.depStamp) > now);
+  if (!t) { el.innerHTML = '<p class="eyebrow">Eşim için</p><h2>Yaklaşan uçuş yok</h2>'; el.onclick = null; return; }
+  const L = t.legs;
+  const main = t.main;
+  const outI = Math.max(0, L.findIndex((l) => l.to === main));
+  const retI = L.findIndex((l, i) => i > outI && l.from === main);
+  const outDep = trAt(L[0].from, L[0].depDate, L[0].dep);
+  const outArr = trAt(L[outI].to, L[outI].arrDate, L[outI].arr);
+  const ret = retI >= 0 ? trAt(L[retI].from, L[retI].depDate, L[retI].dep) : null;
+  const home = t.returnStamp ? shiftStamp(t.returnStamp, 90) : null;
+  const n = main && main !== HOME && localAt(main, Date.now());
+  const day = (d, ref) => (d !== ref ? `<small class="sd">${esc(dshort(d))}</small>` : '');
+  const cell = (label, time, date, ref, hl) => `<div class="hero-cell${hl ? ' hl' : ''}"><small>${label}</small><b>${time || '–'}</b>${time ? day(date, ref) : ''}</div>`;
+  const onDuty = istDate(t.depStamp) <= now;
+  const status = onDuty
+    ? (t.returnStamp ? `İstanbul'a inişe ${esc(relative(istDate(t.returnStamp), now).replace(' sonra', ''))} var.` : '')
+    : (t.leave && istDate(t.leave) > now ? `Evden çıkışa ${esc(relative(istDate(t.leave), now).replace(' sonra', ''))} var.` : `Kalkışa ${esc(relative(istDate(t.depStamp), now).replace(' sonra', ''))} var.`);
+  el.innerHTML = `
+    <div class="hero-head"><div><p class="eyebrow">Eşim için · ${onDuty ? 'şu an görevde' : 'sıradaki uçuş'}</p>
+      <h2>${esc(city(L[0].from))} → ${esc(city(main))}</h2></div>
+      ${n ? `<span class="now-local"><small>${esc(main)} şu an</small><b>${n.time}</b></span>` : ''}</div>
+    <p class="when">${esc(fmtDay(outDep.date))} · ${esc(L[0].flight)}${t.cargo ? ' · kargo' : ''}</p>
+    <p class="sp-h">Gidiş <span>Türkiye saati</span></p>
+    <div class="hero-grid">
+      ${cell('Evden çıkış', t.leave?.slice(11), t.leave?.slice(0, 10), outDep.date, true)}
+      ${cell('Kalkış', outDep.time, outDep.date, outDep.date)}
+      ${cell(`${esc(city(main))} iniş`, outArr.time, outArr.date, outDep.date)}
+    </div>
+    <p class="sp-h">Dönüş <span>Türkiye saati</span></p>
+    <div class="hero-grid">
+      ${cell('Kalkış', ret?.time, ret?.date, '')}
+      ${cell('İstanbul iniş', t.returnStamp?.slice(11), t.returnStamp?.slice(0, 10), '')}
+      ${cell('Eve geliş', home?.slice(11), home?.slice(0, 10), t.returnStamp?.slice(0, 10), true)}
+    </div>
+    ${status ? `<p class="countdown">${status}</p>` : ''}`;
+  el.onclick = () => openTrip(t);
+}
+
 function renderHero() {
   const now = new Date();
   const T = allTrips();
   const el = $('#hero');
   el.className = 'hero';
+  if (spouse) return spouseCard(el, T, now);
   // 'on duty' starts at departure; until then keep the pre-flight card (leave time + live traffic)
   const current = T.find((t) => istDate(t.depStamp) <= now && t.returnStamp && now < istDate(t.returnStamp));
   if (current) {
